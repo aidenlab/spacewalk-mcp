@@ -1,0 +1,10 @@
+# The top level is local development (`wrangler dev`) and the tests; it is never
+# deployed. Deployments will be named environments added below.
+name = "spacewalk-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# The Viewer's address. The Viewer is hosted on its own origin, not by this Worker.
+VIEWER_URL = "http://localhost:5173/"

@@ -1,0 +1,20 @@
+{
+  "name": "spacewalk-mcp-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "spacewalk-mcp server: a Cloudflare Worker with the MCP endpoint (/mcp)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "types": "wrangler types --strict-vars false --env-file .dev.vars.example",
+    "typecheck": "npm run types && tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "wrangler": "^4.149.0"
+  }
+}
