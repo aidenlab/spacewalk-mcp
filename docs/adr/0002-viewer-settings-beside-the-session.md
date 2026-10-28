@@ -1,0 +1,3 @@
+# Viewer settings are kept beside the session, in the Room
+
+Viewer settings (background, axes, ground plane, reference ruler visibility and color) are part of the Room's viewer state, shared by every Viewer in the Room, and never written into a session string. The Viewer keeps none of them in `localStorage`: on a shared origin that would leak them across Rooms and out of shareable URLs. A shareable URL carries them as a parameter of their own, beside the session parameter. The ruler's on-screen anchor is per-window and never enters the Room. The full Spacewalk app keeps `localStorage`, unchanged.
