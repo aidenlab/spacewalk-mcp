@@ -1,8 +1,13 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  PROTOCOL_VERSION,
   Proposal,
+  ViewerMessage,
   type EnsembleKind,
-  type ErrorMessage,
+  type ErrorCode,
+  type Realization,
+  type RealizedMessage,
+  type RoomMessage,
   type StateMessage,
   type ViewerState,
 } from '@aidenlab/spacewalk-remote/protocol'
@@ -32,14 +37,42 @@ export interface Refusal {
 
 export type Result = ({ ok: true } & Versioned) | Refusal
 
+/** A version some Viewer has realized, as its first report of it said. */
+export interface Realized {
+  version: number
+  result: Realization
+}
+
+/** A Viewer's report that it failed to draw a version. */
+export interface Failure {
+  version: number
+  reason: string
+}
+
+export type RealizedResult = { ok: true; latest: Realized | null; failures: Failure[] } | Refusal
+
 /** What a live Room stores: its current version, and the version that loaded its ensemble. */
 interface Current extends Versioned {
   loadedAt: number | null
 }
 
-// Storage keys. A live Room holds CURRENT; an expired one holds only EXPIRED, its last version.
+/** What a Viewer shows when its Room has expired. */
+const EXPIRED_MESSAGE = 'This Room has expired.'
+
+/** What the Room keeps on each socket, surviving hibernation. */
+interface Attachment {
+  joined: boolean
+}
+
+// Storage keys. A live Room holds CURRENT, and REALIZED and FAILURES once Viewers report; an
+// expired one holds only EXPIRED, its last version.
 const CURRENT = 'current'
+const REALIZED = 'realized'
+const FAILURES = 'failures'
 const EXPIRED = 'expired'
+
+/** The most failures a Room keeps; older ones are dropped. */
+const FAILURES_KEPT = 100
 
 /**
  * A Room: ties one conversation to the Viewers showing its 3D view, and holds its viewer state
@@ -118,21 +151,124 @@ export class Room extends DurableObject<Env> {
     return versioned(current)
   }
 
+  /** A Viewer's WebSocket upgrade, from `/ws`: accept it and wait for it to join. */
+  async fetch(): Promise<Response> {
+    const [client, server] = Object.values(new WebSocketPair())
+    this.ctx.acceptWebSocket(server)
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /**
+   * A message from a Viewer's socket. Until it has joined, a socket is heard only to join: it has
+   * not yet shown it speaks this protocol.
+   */
+  async webSocketMessage(socket: WebSocket, data: string | ArrayBuffer) {
+    const message = parseViewerMessage(data)
+    if (!message.ok) {
+      send(socket, { type: 'error', code: 'malformed-message', message: message.error })
+      // It may have been a hand change: put it back.
+      return hasJoined(socket) ? this.resync(socket) : undefined
+    }
+    if (message.data.type === 'join') return this.join(socket, message.data.protocol)
+    if (!hasJoined(socket)) return
+    switch (message.data.type) {
+      case 'propose':
+        return this.proposeByHand(socket, message.data.proposal)
+      case 'realized':
+        return this.realize(message.data)
+    }
+  }
+
+  /** A Viewer joins: it gets the current version, as every resync does. */
+  private async join(socket: WebSocket, protocol: number) {
+    if (protocol !== PROTOCOL_VERSION) {
+      return refuse(socket, 'protocol-mismatch', 'This viewer is out of date: reload the viewer.')
+    }
+    const current = await this.read()
+    if (current.ok) {
+      socket.serializeAttachment({ joined: true } satisfies Attachment)
+      return socket.send(stateMessage(current))
+    }
+    this.refuseGone(socket, current.reason)
+  }
+
+  /**
+   * The Room has expired or was never opened: tell the Viewer which, and let it go. Only a
+   * proposal is ever 'refused', so for the Room itself that reason never arises.
+   */
+  private refuseGone(socket: WebSocket, reason: Reason) {
+    if (reason === 'room-expired') return refuse(socket, 'room-expired', EXPIRED_MESSAGE)
+    refuse(socket, 'room-unknown', 'No such Room.')
+  }
+
+  /**
+   * A Viewer's hand change. Applied, it reaches every Viewer by broadcast; refused, only its Viewer
+   * hears why, and is resynced to put the change back.
+   */
+  private async proposeByHand(socket: WebSocket, proposal: Proposal) {
+    const result = await this.propose(proposal)
+    if (result.ok) return
+    if (result.reason !== 'refused') return this.refuseGone(socket, result.reason)
+    send(socket, { type: 'error', code: 'proposal-refused', message: result.message })
+    await this.resync(socket)
+  }
+
+  /** Send a joined Viewer the current version, putting back whatever it has changed by hand. */
+  private async resync(socket: WebSocket) {
+    const current = await this.read()
+    if (current.ok) socket.send(stateMessage(current))
+  }
+
+  /**
+   * A Viewer's realized report. The first report of a version wins, and stands for every version
+   * before it; a later one, or one on an older version, changes nothing. A failure is kept
+   * whichever Viewer reports it, as is the ensemble's kind. A report on a version the Room has
+   * not reached is ignored.
+   */
+  private async realize({ version, kind, result }: RealizedMessage) {
+    const current = await this.live()
+    if (!current.ok || version > current.version) return
+
+    const latest = await this.latestRealized()
+    if (latest === null || version > latest.version) {
+      await this.ctx.storage.put(REALIZED, { version, result } satisfies Realized)
+    }
+    if (result.outcome === 'failed') {
+      const failures = await this.failures()
+      failures.push({ version, reason: result.reason })
+      await this.ctx.storage.put(FAILURES, failures.slice(-FAILURES_KEPT))
+    }
+    if (kind !== null) await this.recordKind(version, kind)
+    else await this.touch()
+  }
+
+  /**
+   * What Viewers have reported realized: the latest version realized, with its first report, and
+   * the failures any Viewer has reported, oldest first.
+   */
+  async realized(): Promise<RealizedResult> {
+    const current = await this.live()
+    if (!current.ok) return current
+    await this.touch()
+    return { ok: true, latest: await this.latestRealized(), failures: await this.failures() }
+  }
+
+  private async latestRealized(): Promise<Realized | null> {
+    return (await this.ctx.storage.get<Realized>(REALIZED)) ?? null
+  }
+
+  private async failures(): Promise<Failure[]> {
+    return (await this.ctx.storage.get<Failure[]>(FAILURES)) ?? []
+  }
+
   /** A day has passed without use: expire, and let every Viewer go. */
   async alarm(): Promise<void> {
     const current = await this.ctx.storage.get<Current>(CURRENT)
     if (!current) return
     await this.ctx.storage.deleteAll()
     await this.ctx.storage.put(EXPIRED, current.version)
-
-    const message = JSON.stringify({
-      type: 'error',
-      code: 'room-expired',
-      message: 'This Room has expired.',
-    } satisfies ErrorMessage)
     for (const socket of this.ctx.getWebSockets()) {
-      socket.send(message)
-      socket.close(1000, 'room-expired')
+      refuse(socket, 'room-expired', EXPIRED_MESSAGE)
     }
   }
 
@@ -157,12 +293,53 @@ export class Room extends DurableObject<Env> {
 
   /** Send a version to every Viewer in the Room. */
   private broadcast({ version, state }: Versioned) {
-    const message = JSON.stringify({ type: 'state', version, state } satisfies StateMessage)
-    for (const socket of this.ctx.getWebSockets()) socket.send(message)
+    const message = stateMessage({ version, state })
+    for (const socket of this.viewers()) socket.send(message)
+  }
+
+  /** The sockets that have joined: those that speak this protocol and have had a first sync. */
+  private viewers(): WebSocket[] {
+    return this.ctx.getWebSockets().filter(hasJoined)
   }
 }
 
 /** A successful result: the version and its viewer state, and nothing the Room keeps to itself. */
 function versioned({ version, state }: Versioned): Result {
   return { ok: true, version, state }
+}
+
+/** A version as the message that tells a Viewer about it. */
+function stateMessage({ version, state }: Versioned): string {
+  return JSON.stringify({ type: 'state', version, state } satisfies StateMessage)
+}
+
+/** Tell a Viewer why the Room will not have it, and let it go. */
+function refuse(socket: WebSocket, code: ErrorCode, message: string) {
+  send(socket, { type: 'error', code, message })
+  socket.close(1000, code)
+}
+
+function send(socket: WebSocket, message: RoomMessage) {
+  socket.send(JSON.stringify(message))
+}
+
+/** Whether a socket has joined the Room. */
+function hasJoined(socket: WebSocket): boolean {
+  const attachment = socket.deserializeAttachment() as Attachment | null
+  return attachment?.joined === true
+}
+
+/** A Viewer's message, or what is wrong with it. */
+function parseViewerMessage(
+  data: string | ArrayBuffer,
+): { ok: true; data: ViewerMessage } | { ok: false; error: string } {
+  let json: unknown
+  try {
+    json = JSON.parse(typeof data === 'string' ? data : new TextDecoder().decode(data))
+  } catch {
+    return { ok: false, error: 'Not JSON.' }
+  }
+  const parsed = ViewerMessage.safeParse(json)
+  if (!parsed.success) return { ok: false, error: parsed.error.message }
+  return { ok: true, data: parsed.data }
 }

@@ -31,3 +31,15 @@ describe('a Room refusing a Viewer', () => {
     expect(RoomMessage.safeParse({ type: 'error', code: 'teapot' }).success).toBe(false)
   })
 })
+
+describe('a Viewer reporting a version realized', () => {
+  it('says it drew it, and the kind of ensemble it shows', () => {
+    const report = { type: 'realized', version: 3, kind: 'trace', result: { outcome: 'drawn' } }
+    expect(ViewerMessage.safeParse(report).success).toBe(true)
+  })
+
+  it('cannot report a failure without a reason', () => {
+    const report = { type: 'realized', version: 3, kind: null, result: { outcome: 'failed' } }
+    expect(ViewerMessage.safeParse(report).success).toBe(false)
+  })
+})
