@@ -40,7 +40,10 @@ export const Ensemble = z.object({
 })
 export type Ensemble = z.infer<typeof Ensemble>
 
-/** The render style a person chooses. A point-cloud ensemble is drawn as a point cloud whatever this says. */
+/**
+ * The render style a person chooses. A point-cloud ensemble is drawn as a point cloud whatever
+ * this says.
+ */
 export const RenderStyle = z.enum(['ball-and-stick', 'ribbon'])
 export type RenderStyle = z.infer<typeof RenderStyle>
 
@@ -64,7 +67,10 @@ export const StructureAppearance = z.object({
 })
 export type StructureAppearance = z.infer<typeof StructureAppearance>
 
-/** Viewer settings: the furniture around the structure, in the record Spacewalk's `ViewerSettings` receives (ADR 0002). */
+/**
+ * Viewer settings: the furniture around the structure, in the record Spacewalk's
+ * `ViewerSettings` receives (ADR 0002).
+ */
 export const ViewerSettings = z.object({
   background: Color,
   gnomon: SceneFixture,
@@ -92,7 +98,13 @@ export const ViewerState = z.object({
 })
 export type ViewerState = z.infer<typeof ViewerState>
 
-const Direction = z.enum(['up', 'down'])
+/** Which way a radius step goes along the ladder. */
+export const RadiusDirection = z.enum(['up', 'down'])
+export type RadiusDirection = z.infer<typeof RadiusDirection>
+
+/** Which way a background step goes. */
+export const BackgroundDirection = z.enum(['lighter', 'darker'])
+export type BackgroundDirection = z.infer<typeof BackgroundDirection>
 
 /**
  * A proposal: a change to the viewer state offered by a Viewer or a tool call. Only the Room
@@ -104,8 +116,8 @@ export const Proposal = z.discriminatedUnion('type', [
   z.object({ type: z.literal('select-ensemble-group'), key: z.string() }),
   z.object({ type: z.literal('select-trace'), key: z.string() }),
   z.object({ type: z.literal('set-render-style'), style: RenderStyle }),
-  z.object({ type: z.literal('step-ball-radius'), direction: Direction }),
-  z.object({ type: z.literal('step-stick-radius'), direction: Direction }),
+  z.object({ type: z.literal('step-ball-radius'), direction: RadiusDirection }),
+  z.object({ type: z.literal('step-stick-radius'), direction: RadiusDirection }),
   z.object({
     type: z.literal('set-structure-appearance'),
     patch: StructureAppearance.partial(),
@@ -119,7 +131,7 @@ export const Proposal = z.discriminatedUnion('type', [
       referenceRuler: SceneFixture.partial().optional(),
     }),
   }),
-  z.object({ type: z.literal('adjust-background'), direction: z.enum(['lighter', 'darker']) }),
+  z.object({ type: z.literal('adjust-background'), direction: BackgroundDirection }),
   z.object({ type: z.literal('set-camera'), camera: Camera }),
   z.object({ type: z.literal('reset-camera') }),
 ])

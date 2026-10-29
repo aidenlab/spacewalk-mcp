@@ -4,9 +4,11 @@
  */
 import {
   RADIUS_LADDER_LENGTH,
+  type BackgroundDirection,
   type Color,
   type EnsembleKind,
   type Proposal,
+  type RadiusDirection,
   type ViewerState,
 } from '@aidenlab/spacewalk-remote/protocol'
 
@@ -52,7 +54,10 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
       })
     case 'select-ensemble-group':
       if (!ensemble) return refused(NO_ENSEMBLE)
-      return applied({ ...state, ensemble: { ...ensemble, groupKey: proposal.key, traceKey: null } })
+      return applied({
+        ...state,
+        ensemble: { ...ensemble, groupKey: proposal.key, traceKey: null },
+      })
     case 'select-trace':
       if (!ensemble) return refused(NO_ENSEMBLE)
       return applied({ ...state, ensemble: { ...ensemble, traceKey: proposal.key } })
@@ -99,17 +104,14 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
   }
 }
 
-/**
- * The viewer state knowing the kind of the ensemble at `url`, as a Viewer reported it on
- * realizing a version. A report about an ensemble no longer loaded changes nothing.
- */
-export function withKind(state: ViewerState, url: string, kind: EnsembleKind): ViewerState {
-  if (state.ensemble?.url !== url) return state
+/** The viewer state knowing the loaded ensemble's kind, as a Viewer reported it. */
+export function withKind(state: ViewerState, kind: EnsembleKind): ViewerState {
+  if (!state.ensemble) return state
   return { ...state, ensemble: { ...state.ensemble, kind } }
 }
 
 /** One rung up or down Spacewalk's radius ladder, stopping at either end. */
-function stepRung(rung: number, direction: 'up' | 'down'): number {
+function stepRung(rung: number, direction: RadiusDirection): number {
   const next = rung + (direction === 'up' ? 1 : -1)
   return Math.min(Math.max(next, 0), RADIUS_LADDER_LENGTH - 1)
 }
@@ -121,7 +123,7 @@ const LIGHTNESS_STEP = 0.1
  * The background one step lighter or darker: its HSL lightness, taken in sRGB as a person sees
  * it, moves by LIGHTNESS_STEP and stops at white or black; hue and saturation stay.
  */
-function stepLightness(color: Color, direction: 'lighter' | 'darker'): Color {
+function stepLightness(color: Color, direction: BackgroundDirection): Color {
   const [h, s, l] = rgbToHsl(toSrgb(color.r), toSrgb(color.g), toSrgb(color.b))
   const lightness = clamp01(l + (direction === 'lighter' ? LIGHTNESS_STEP : -LIGHTNESS_STEP))
   const [r, g, b] = hslToRgb(h, s, lightness).map(toLinear)
@@ -162,7 +164,8 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     if (u < 2 / 3) return p + (q - p) * (2 / 3 - u) * 6
     return p
   }
-  return [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)].map(clamp01) as [number, number, number]
+  const rgb = [channel(h + 1 / 3), channel(h), channel(h - 1 / 3)].map(clamp01)
+  return rgb as [number, number, number]
 }
 
 function clamp01(value: number): number {

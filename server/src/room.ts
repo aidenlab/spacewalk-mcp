@@ -23,9 +23,21 @@ export interface Versioned {
  */
 export type Reason = 'room-unknown' | 'room-expired' | 'refused'
 
-export type Result = ({ ok: true } & Versioned) | { ok: false; reason: Reason; message: string }
+/** The Room did not do what it was asked, and says why. */
+export interface Refusal {
+  ok: false
+  reason: Reason
+  message: string
+}
 
-// Storage keys. A live Room holds CURRENT; an expired one holds only EXPIRED.
+export type Result = ({ ok: true } & Versioned) | Refusal
+
+/** What a live Room stores: its current version, and the version that loaded its ensemble. */
+interface Current extends Versioned {
+  loadedAt: number | null
+}
+
+// Storage keys. A live Room holds CURRENT; an expired one holds only EXPIRED, its last version.
 const CURRENT = 'current'
 const EXPIRED = 'expired'
 
@@ -37,18 +49,21 @@ const EXPIRED = 'expired'
  */
 export class Room extends DurableObject<Env> {
   /**
-   * Open the Room: a live Room keeps what it holds; a Room never opened, or expired, starts
-   * empty at version 0. Only `open_viewer` calls this.
+   * Open the Room: a live Room keeps what it holds; a Room never opened starts empty at version
+   * 0, and an expired one starts empty at the version after its last, so that no Viewer takes
+   * the new state for one it has already seen. Only `open_viewer` calls this.
    */
   async open(): Promise<Result> {
-    let current = await this.ctx.storage.get<Versioned>(CURRENT)
+    let current = await this.ctx.storage.get<Current>(CURRENT)
     if (!current) {
-      current = { version: 0, state: emptyViewerState() }
+      const expiredAt = await this.ctx.storage.get<number>(EXPIRED)
+      const version = expiredAt === undefined ? 0 : expiredAt + 1
+      current = { version, state: emptyViewerState(), loadedAt: null }
       await this.ctx.storage.delete(EXPIRED)
       await this.ctx.storage.put(CURRENT, current)
     }
     await this.touch()
-    return { ok: true, ...current }
+    return versioned(current)
   }
 
   /**
@@ -62,29 +77,37 @@ export class Room extends DurableObject<Env> {
 
     const parsed = Proposal.safeParse(proposal)
     if (!parsed.success) {
-      return { ok: false, reason: 'refused', message: `Malformed proposal: ${parsed.error.message}` }
+      const message = `Malformed proposal: ${parsed.error.message}`
+      return { ok: false, reason: 'refused', message }
     }
     const result = apply(current.state, parsed.data)
     if (!result.ok) return { ok: false, reason: 'refused', message: result.refusal }
-    const next: Versioned = { version: current.version + 1, state: result.state }
+    const version = current.version + 1
+    const loadedAt = parsed.data.type === 'load-ensemble' ? version : current.loadedAt
+    const next: Current = { version, state: result.state, loadedAt }
     await this.ctx.storage.put(CURRENT, next)
     this.broadcast(next)
-    return { ok: true, ...next }
+    return versioned(next)
   }
 
   /**
-   * Record the kind of the ensemble at `url`, from a Viewer's realized report. Not a proposal, so
-   * no new version: the Viewer that reported it has already realized this version, and a new one
-   * would only ask it to realize the same drawing again.
+   * Record the kind of ensemble a Viewer drew at `version`, from its realized report. It counts
+   * only if that version shows the ensemble loaded now: a report on an earlier load, even of the
+   * same URL, changes nothing. Not a proposal, so no new version: the Viewer has already drawn
+   * this one, and a new one would only ask it to draw the same thing again.
    */
-  async recordKind(url: string, kind: EnsembleKind): Promise<Result> {
+  async recordKind(version: number, kind: EnsembleKind): Promise<Result> {
     const current = await this.live()
     if (!current.ok) return current
     await this.touch()
 
-    const next: Versioned = { version: current.version, state: withKind(current.state, url, kind) }
+    const { loadedAt } = current
+    if (loadedAt === null || version < loadedAt || version > current.version) {
+      return versioned(current)
+    }
+    const next: Current = { ...current, state: withKind(current.state, kind) }
     await this.ctx.storage.put(CURRENT, next)
-    return { ok: true, ...next }
+    return versioned(next)
   }
 
   /** The viewer state at its current version. */
@@ -92,13 +115,15 @@ export class Room extends DurableObject<Env> {
     const current = await this.live()
     if (!current.ok) return current
     await this.touch()
-    return current
+    return versioned(current)
   }
 
   /** A day has passed without use: expire, and let every Viewer go. */
   async alarm(): Promise<void> {
+    const current = await this.ctx.storage.get<Current>(CURRENT)
+    if (!current) return
     await this.ctx.storage.deleteAll()
-    await this.ctx.storage.put(EXPIRED, true)
+    await this.ctx.storage.put(EXPIRED, current.version)
 
     const message = JSON.stringify({
       type: 'error',
@@ -112,10 +137,10 @@ export class Room extends DurableObject<Env> {
   }
 
   /** The current version, or why there is none. */
-  private async live(): Promise<Result> {
-    const current = await this.ctx.storage.get<Versioned>(CURRENT)
+  private async live(): Promise<({ ok: true } & Current) | Refusal> {
+    const current = await this.ctx.storage.get<Current>(CURRENT)
     if (current) return { ok: true, ...current }
-    if (await this.ctx.storage.get<boolean>(EXPIRED)) {
+    if ((await this.ctx.storage.get<number>(EXPIRED)) !== undefined) {
       return {
         ok: false,
         reason: 'room-expired',
@@ -135,4 +160,9 @@ export class Room extends DurableObject<Env> {
     const message = JSON.stringify({ type: 'state', version, state } satisfies StateMessage)
     for (const socket of this.ctx.getWebSockets()) socket.send(message)
   }
+}
+
+/** A successful result: the version and its viewer state, and nothing the Room keeps to itself. */
+function versioned({ version, state }: Versioned): Result {
+  return { ok: true, version, state }
 }

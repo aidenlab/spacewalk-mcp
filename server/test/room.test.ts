@@ -1,6 +1,11 @@
 import { env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
-import type { Proposal } from '@aidenlab/spacewalk-remote/protocol'
+import type { Color, Proposal } from '@aidenlab/spacewalk-remote/protocol'
 import { describe, expect, it } from 'vitest'
+import type { Result } from '../src/room.ts'
+
+// Apple crayon "iron", #545453, as three.js puts it in linear space: Spacewalk's default
+// furniture color.
+const IRON = { r: 0.08865558627723595, g: 0.08865558627723595, b: 0.08650046202808521 }
 
 // Each test opens its own Room, so they share nothing.
 let rooms = 0
@@ -53,7 +58,11 @@ describe('opening a Room again while it is live', () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'set-render-style', style: 'ribbon' })
-    expect(await room.open()).toMatchObject({ ok: true, version: 1, state: { renderStyle: 'ribbon' } })
+    expect(await room.open()).toMatchObject({
+      ok: true,
+      version: 1,
+      state: { renderStyle: 'ribbon' },
+    })
   })
 })
 
@@ -80,34 +89,40 @@ describe('a Room left unused for a day', () => {
     const expired = { ok: false, reason: 'room-expired' }
     expect(await room.read()).toMatchObject(expired)
     expect(await room.propose({ type: 'reset-camera' })).toMatchObject(expired)
+    expect(await room.recordKind(1, 'trace')).toMatchObject(expired)
   })
 
   it('tells its Viewers it has expired, and lets them go', async () => {
     const room = freshRoom()
     await room.open()
-    const { heard, closed } = await runInDurableObject(room, (_, ctx) => {
-      const [client, server] = Object.values(new WebSocketPair())
-      ctx.acceptWebSocket(server)
-      client.accept()
-      const heard: unknown[] = []
-      client.addEventListener('message', (event) => heard.push(JSON.parse(event.data as string)))
-      const closed = new Promise((resolve) => client.addEventListener('close', resolve))
-      return { heard, closed }
-    })
+    const viewer = await runInDurableObject(room, (_, ctx) => listen(ctx))
     await runDurableObjectAlarm(room)
-    await closed
-    expect(heard).toEqual([{ type: 'error', code: 'room-expired', message: expect.any(String) }])
+    await viewer.closed
+    expect(viewer.heard).toEqual([
+      { type: 'error', code: 'room-expired', message: expect.any(String) },
+    ])
   })
 
-  it('restarts empty under the same id when opened again, never getting its contents back', async () => {
+  it('restarts empty under the same id when opened, never getting its contents back', async () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
     await runDurableObjectAlarm(room)
 
     const reopened = await room.open()
-    expect(reopened).toMatchObject({ ok: true, version: 0, state: { ensemble: null } })
+    expect(reopened).toMatchObject({ ok: true, state: { ensemble: null } })
     expect(await room.read()).toEqual(reopened)
+  })
+
+  it('counts on from its last version after a restart, so no Viewer takes it for old', async () => {
+    const room = freshRoom()
+    await room.open()
+    await room.propose({ type: 'reset-camera' })
+    await room.propose({ type: 'reset-camera' })
+    await runDurableObjectAlarm(room)
+
+    expect(await room.open()).toMatchObject({ version: 3 })
+    expect(await room.propose({ type: 'reset-camera' })).toMatchObject({ version: 4 })
   })
 })
 
@@ -191,13 +206,13 @@ describe('broadcasting', () => {
     const room = freshRoom()
     await room.open()
     await runInDurableObject(room, async (instance, ctx) => {
-      const heard = [listen(ctx), listen(ctx)]
+      const viewers = [listen(ctx), listen(ctx)]
       await instance.propose({ type: 'step-ball-radius', direction: 'up' })
       await instance.propose({ type: 'select-trace', key: '1' }) // refused: no ensemble
       await instance.propose({ type: 'reset-camera' })
       await settle()
-      for (const messages of heard) {
-        expect(messages).toMatchObject([
+      for (const { heard } of viewers) {
+        expect(heard).toMatchObject([
           { type: 'state', version: 1, state: { structureAppearance: { ballRadiusIndex: 6 } } },
           { type: 'state', version: 2, state: { camera: null } },
         ])
@@ -207,13 +222,14 @@ describe('broadcasting', () => {
 })
 
 // Accept one end of a socket pair into the Room, as /ws will, and collect what the other end hears.
-function listen(ctx: DurableObjectState): unknown[] {
+function listen(ctx: DurableObjectState) {
   const [client, server] = Object.values(new WebSocketPair())
   ctx.acceptWebSocket(server)
   client.accept()
-  const messages: unknown[] = []
-  client.addEventListener('message', (event) => messages.push(JSON.parse(event.data as string)))
-  return messages
+  const heard: unknown[] = []
+  client.addEventListener('message', (event) => heard.push(JSON.parse(event.data as string)))
+  const closed = new Promise((resolve) => client.addEventListener('close', resolve))
+  return { heard, closed }
 }
 
 function settle() {
@@ -320,14 +336,17 @@ describe('choosing a render style', () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'load-ensemble', url })
-    await room.recordKind(url, 'point-cloud')
+    await room.recordKind(1, 'point-cloud')
     const result = await room.propose({ type: 'set-render-style', style: 'ribbon' })
     expect(result).toMatchObject({
       ok: false,
       reason: 'refused',
       message: expect.stringMatching(/point cloud/),
     })
-    expect(await room.read()).toMatchObject({ version: 1, state: { renderStyle: 'ball-and-stick' } })
+    expect(await room.read()).toMatchObject({
+      version: 1,
+      state: { renderStyle: 'ball-and-stick' },
+    })
   })
 
   it('is applied while the kind is not yet known', async () => {
@@ -342,30 +361,50 @@ describe('choosing a render style', () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'load-ensemble', url })
-    await room.recordKind(url, 'trace')
+    await room.recordKind(1, 'trace')
     const result = await room.propose({ type: 'set-render-style', style: 'ribbon' })
     expect(result).toMatchObject({ ok: true, state: { renderStyle: 'ribbon' } })
   })
 })
 
 describe('recording the kind a Viewer reports', () => {
+  // A realized report names the version the Viewer drew; the kind is that version's ensemble's.
   it('fills in the loaded ensemble without a new version, since it is no proposal', async () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
-    await room.recordKind('https://example.com/a.sw', 'point-cloud')
+    await room.propose({ type: 'select-trace', key: '4' })
+    await room.recordKind(2, 'point-cloud')
     expect(await room.read()).toMatchObject({
-      version: 1,
+      version: 2,
       state: { ensemble: { url: 'https://example.com/a.sw', kind: 'point-cloud' } },
     })
   })
 
-  it('is ignored when it is about an ensemble no longer loaded', async () => {
+  it('is ignored when it is about an ensemble loaded before the current one', async () => {
     const room = freshRoom()
     await room.open()
     await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
     await room.propose({ type: 'load-ensemble', url: 'https://example.com/b.sw' })
-    await room.recordKind('https://example.com/a.sw', 'point-cloud')
+    await room.recordKind(1, 'point-cloud')
+    expect(await room.read()).toMatchObject({ state: { ensemble: { kind: null } } })
+  })
+
+  it('is ignored when it is about an earlier load of the same ensemble', async () => {
+    const room = freshRoom()
+    await room.open()
+    await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
+    await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
+    await room.recordKind(1, 'point-cloud')
+    expect(await room.read()).toMatchObject({ state: { ensemble: { kind: null } } })
+  })
+
+  it('is ignored when nothing is loaded, or for a version the Room has not reached', async () => {
+    const room = freshRoom()
+    await room.open()
+    await room.recordKind(0, 'trace')
+    await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
+    await room.recordKind(7, 'trace')
     expect(await room.read()).toMatchObject({ state: { ensemble: { kind: null } } })
   })
 })
@@ -386,14 +425,11 @@ describe('the camera', () => {
   })
 })
 
-function backgroundOf(result: Awaited<ReturnType<ReturnType<typeof freshRoom>['read']>>) {
+function backgroundOf(result: Result) {
   if (!result.ok) throw new Error(result.message)
   return result.state.viewerSettings.background
 }
 
-function closeTo({ r, g, b }: { r: number; g: number; b: number }) {
+function closeTo({ r, g, b }: Color) {
   return { r: expect.closeTo(r, 5), g: expect.closeTo(g, 5), b: expect.closeTo(b, 5) }
 }
-
-// Apple crayon "iron", #545453, as three.js puts it in linear space: Spacewalk's default furniture color.
-const IRON = { r: 0.08865558627723595, g: 0.08865558627723595, b: 0.08650046202808521 }
