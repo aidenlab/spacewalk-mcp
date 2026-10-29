@@ -5,21 +5,21 @@ import { FakeSocket, STATE } from './fakeSocket.ts'
 
 const URL = 'wss://spacewalk-mcp.example/ws'
 
-/** Let the Viewer's queued work run: applying a state and reporting it are asynchronous. */
+/** Let the Viewer's queued work run: drawing a state and reporting it are asynchronous. */
 const settle = () => vi.advanceTimersByTimeAsync(0)
 
 function attach(options: Partial<AttachOptions> = {}) {
-  const apply = vi.fn<AttachOptions['apply']>(() => ({ kind: 'trace' }))
+  const draw = vi.fn<AttachOptions['draw']>(() => ({ kind: 'trace' }))
   const onStatus = vi.fn<NonNullable<AttachOptions['onStatus']>>()
   const remote = attachRemote({
     url: URL,
     room: 'room-1',
-    apply,
+    draw,
     onStatus,
     createSocket: (url) => new FakeSocket(url),
     ...options,
   })
-  return { remote, apply, onStatus }
+  return { remote, draw, onStatus }
 }
 
 /** Attach, open the socket and hear the first sync at `version`. */
@@ -49,9 +49,9 @@ describe('attaching a Viewer to a Room', () => {
     expect(socket.sent).toEqual([{ type: 'join', protocol: PROTOCOL_VERSION }])
   })
 
-  it('applies a broadcast viewer state and reports it realized, with the kind', async () => {
-    const { apply, socket } = await joined({}, 3)
-    expect(apply).toHaveBeenCalledWith(STATE, 3)
+  it('draws a broadcast viewer state and reports it realized, with the kind', async () => {
+    const { draw, socket } = await joined({}, 3)
+    expect(draw).toHaveBeenCalledWith(STATE, 3)
     expect(socket.sentOf('realized')).toEqual([
       { type: 'realized', version: 3, kind: 'trace', result: { outcome: 'drawn' } },
     ])
@@ -107,7 +107,7 @@ describe('proposing a hand change', () => {
     ])
   })
 
-  it('waits as long as the page asks for a gesture to end', async () => {
+  it('waits as long as the Viewer asks for a gesture to end', async () => {
     const { remote, socket } = await joined({ gestureEndMs: 50 })
     remote.propose({ type: 'set-structure-appearance', patch: { pointOpacity: 0.5 } })
     await vi.advanceTimersByTimeAsync(50)
@@ -126,27 +126,52 @@ describe('proposing a hand change', () => {
     expect(socket.sentOf('propose')).toHaveLength(2)
   })
 
-  it('does not propose what the page changes while it applies a state: that is the Room’s change', async () => {
+  it('does not echo back what the Viewer changes in drawing the Room’s state', async () => {
     let remote: ReturnType<typeof attachRemote> | undefined
-    const apply = vi.fn(async () => {
-      remote?.propose({ type: 'set-render-style', style: 'ribbon' })
+    const camera = { position: { x: 0, y: 0, z: 10 }, target: { x: 0, y: 0, z: 0 } }
+    const state = { ...STATE, camera }
+    const draw = vi.fn(async () => {
+      remote?.propose({ type: 'set-render-style', style: state.renderStyle })
       await Promise.resolve()
-      remote?.propose({ type: 'set-structure-appearance', patch: { pointOpacity: 0.5 } })
+      remote?.propose({ type: 'set-structure-appearance', patch: { pointOpacity: 1, sticksVisible: true } })
+      remote?.propose({ type: 'set-viewer-settings', patch: { gnomon: { visible: true } } })
+      remote?.propose({ type: 'set-camera', camera })
+      remote?.propose({ type: 'load-ensemble', url: state.ensemble!.url })
       return { kind: 'trace' as const }
     })
-    const attached = attach({ apply })
+    const attached = attach({ draw })
     remote = attached.remote
     const socket = FakeSocket.latest()
     socket.open()
-    socket.receive({ type: 'state', version: 1, state: STATE })
+    socket.receive({ type: 'state', version: 1, state })
     await vi.advanceTimersByTimeAsync(1000)
     expect(socket.sentOf('propose')).toEqual([])
 
-    remote.propose({ type: 'set-render-style', style: 'ribbon' })
+    // Drawn, the same change is a hand's.
+    remote.propose({ type: 'set-render-style', style: state.renderStyle })
     expect(socket.sentOf('propose')).toHaveLength(1)
   })
 
-  it('proposes nothing while disconnected: the resync on rejoining puts the page back', async () => {
+  it('proposes a hand change made while a long draw runs', async () => {
+    let finish = () => {}
+    const draw = vi.fn(() => new Promise<{ kind: 'trace' }>((resolve) => (finish = () => resolve({ kind: 'trace' }))))
+    const { remote, socket } = await joined({ draw })
+    remote.propose({ type: 'set-render-style', style: 'ribbon' })
+    remote.propose({ type: 'set-structure-appearance', patch: { pointOpacity: 0.4 } })
+    remote.propose({ type: 'set-structure-appearance', patch: { pointOpacity: 0.3 } })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(socket.sentOf('propose')).toEqual([
+      { type: 'propose', proposal: { type: 'set-render-style', style: 'ribbon' } },
+      { type: 'propose', proposal: { type: 'set-structure-appearance', patch: { pointOpacity: 0.3 } } },
+    ])
+    finish()
+  })
+
+  it('refuses at once a Room endpoint that is not a URL', () => {
+    expect(() => attach({ url: '/ws' })).toThrow()
+  })
+
+  it('proposes nothing while disconnected: the resync on rejoining puts the Viewer back', async () => {
     const { remote, socket } = await joined()
     socket.drop()
     remote.propose({ type: 'step-ball-radius', direction: 'up' })
@@ -157,7 +182,7 @@ describe('proposing a hand change', () => {
     expect(FakeSocket.instances.flatMap((s) => s.sentOf('propose'))).toEqual([])
   })
 
-  it('proposes the camera at once: the page commits it at orbit end', async () => {
+  it('proposes the camera at once: the Viewer commits it at orbit end', async () => {
     const { remote, socket } = await joined()
     const camera = { position: { x: 0, y: 0, z: 10 }, target: { x: 0, y: 0, z: 0 } }
     remote.propose({ type: 'set-camera', camera })
@@ -167,7 +192,7 @@ describe('proposing a hand change', () => {
 
 describe('a dropped connection', () => {
   it('reconnects, joins again and draws the version it is resynced to', async () => {
-    const { apply, onStatus, socket: first } = await joined({}, 5)
+    const { draw, onStatus, socket: first } = await joined({}, 5)
     first.drop()
     expect(onStatus).toHaveBeenLastCalledWith({ type: 'closed' })
 
@@ -177,10 +202,10 @@ describe('a dropped connection', () => {
     second.open()
     expect(second.sent).toEqual([{ type: 'join', protocol: PROTOCOL_VERSION }])
 
-    // The same version again: the page puts back whatever it changed by hand meanwhile.
+    // The same version again: the Viewer puts back whatever it changed by hand meanwhile.
     second.receive({ type: 'state', version: 5, state: STATE })
     await settle()
-    expect(apply.mock.calls.map(([, version]) => version)).toEqual([5, 5])
+    expect(draw.mock.calls.map(([, version]) => version)).toEqual([5, 5])
     expect(second.sentOf('realized').map((realized) => realized.version)).toEqual([5])
   })
 
@@ -224,8 +249,8 @@ describe('a Room that refuses the Viewer', () => {
     ['protocol-mismatch', 'This viewer is out of date: reload the viewer.'],
     ['room-expired', 'This Room has expired.'],
     ['room-unknown', 'There is no such Room.'],
-  ] as const)('on %s, tells the page to show "%s" and stops for good', async (code, message) => {
-    const { apply, onStatus, socket } = await joined()
+  ] as const)('on %s, tells the Viewer to show "%s" and stops for good', async (code, message) => {
+    const { draw, onStatus, socket } = await joined()
     socket.receive({ type: 'error', code, message: 'What the Room said.' })
     socket.drop()
     expect(onStatus).toHaveBeenLastCalledWith({ type: 'ended', reason: code, message })
@@ -234,23 +259,23 @@ describe('a Room that refuses the Viewer', () => {
     expect(FakeSocket.instances).toHaveLength(1)
     socket.receive({ type: 'state', version: 9, state: STATE })
     await settle()
-    expect(apply).toHaveBeenCalledTimes(1)
+    expect(draw).toHaveBeenCalledTimes(1)
   })
 
   it('keeps going after refusing a hand change: the resync that follows puts it back', async () => {
-    const { apply, onStatus, socket } = await joined({}, 2)
+    const { draw, onStatus, socket } = await joined({}, 2)
     socket.receive({ type: 'error', code: 'proposal-refused', message: 'No such trace.' })
     socket.receive({ type: 'state', version: 2, state: STATE })
     await settle()
-    expect(apply).toHaveBeenCalledTimes(2)
+    expect(draw).toHaveBeenCalledTimes(2)
     expect(onStatus).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ended' }))
   })
 })
 
 describe('reporting a version realized', () => {
-  it('reports a version the page could not draw as failed, with the kind it learned', async () => {
-    const apply = vi.fn(() => ({ kind: 'point-cloud' as const, failure: 'A point cloud has no ribbon.' }))
-    const { socket } = await joined({ apply }, 4)
+  it('reports a version the Viewer could not draw as failed, with the kind it learned', async () => {
+    const draw = vi.fn(() => ({ kind: 'point-cloud' as const, failure: 'A point cloud has no ribbon.' }))
+    const { socket } = await joined({ draw }, 4)
     expect(socket.sentOf('realized')).toEqual([
       {
         type: 'realized',
@@ -263,29 +288,29 @@ describe('reporting a version realized', () => {
 
   it('draws one version at a time, skipping to the latest that came meanwhile', async () => {
     let finish = () => {}
-    const apply = vi.fn(
+    const draw = vi.fn(
       (_state, version: number) =>
         version === 1
           ? new Promise<{ kind: 'trace' }>((resolve) => (finish = () => resolve({ kind: 'trace' })))
           : { kind: 'trace' as const },
     )
-    const { socket } = await joined({ apply }, 1)
+    const { socket } = await joined({ draw }, 1)
     socket.receive({ type: 'state', version: 2, state: STATE })
     socket.receive({ type: 'state', version: 3, state: STATE })
     await settle()
-    expect(apply.mock.calls.map(([, version]) => version)).toEqual([1])
+    expect(draw.mock.calls.map(([, version]) => version)).toEqual([1])
 
     finish()
     await settle()
-    expect(apply.mock.calls.map(([, version]) => version)).toEqual([1, 3])
+    expect(draw.mock.calls.map(([, version]) => version)).toEqual([1, 3])
     expect(socket.sentOf('realized').map((realized) => realized.version)).toEqual([1, 3])
   })
 
   it('reports a version failed when drawing it throws, kind unknown', async () => {
-    const apply = vi.fn(async () => {
+    const draw = vi.fn(async () => {
       throw new Error('No such file.')
     })
-    const { socket } = await joined({ apply }, 2)
+    const { socket } = await joined({ draw }, 2)
     expect(socket.sentOf('realized')).toEqual([
       { type: 'realized', version: 2, kind: null, result: { outcome: 'failed', reason: 'No such file.' } },
     ])

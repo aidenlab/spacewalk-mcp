@@ -1,8 +1,8 @@
 /**
  * `attachRemote`: connects a Viewer to its Room over `/ws?room=`. The Room is authoritative
- * (ADR 0001): the Viewer applies every viewer state the Room broadcasts, proposes hand changes,
- * and reports each version realized. Drawing is the page's: it passes `apply`, and the library
- * never touches the scene or the DOM.
+ * (ADR 0001): the Viewer draws every viewer state the Room broadcasts, proposes hand changes,
+ * and reports each version realized. How to draw is the Viewer's own: it passes `draw`, and the
+ * library never touches the scene or the DOM.
  */
 import {
   PROTOCOL_VERSION,
@@ -16,11 +16,11 @@ import {
   type ViewerState,
 } from './protocol.ts'
 
-/** How the page's attempt to draw a version went, and the kind of ensemble it shows. */
+/** How the Viewer's attempt to draw a version went, and the kind of ensemble it shows. */
 export interface Drawing {
-  /** The ensemble's kind, once the page knows it; null when it does not, or nothing is loaded. */
+  /** The ensemble's kind, once the Viewer knows it; null when it does not, or nothing is loaded. */
   kind: EnsembleKind | null
-  /** Why the page could not draw the version; absent when it was drawn. */
+  /** Why the Viewer could not draw the version; absent when it was drawn. */
   failure?: string
 }
 
@@ -36,16 +36,16 @@ export interface Socket {
 }
 
 export interface AttachOptions {
-  /** The Room's `/ws` endpoint, e.g. `wss://spacewalk-mcp.3dg.io/ws`. */
+  /** The Room's `/ws` endpoint, an absolute URL, e.g. `wss://spacewalk-mcp.3dg.io/ws`. */
   url: string
   /** The Room id, from the Room link. */
   room: string
   /**
    * Draw the viewer state at `version`. Resolve when it is drawn, or failed: a throw is a failure
-   * too. Every state is applied, the same version again on a resync, so the page puts back what
-   * it shows by hand.
+   * too. Every state the Room sends is drawn, the same version again on a resync, so the Viewer
+   * puts back what it shows by hand.
    */
-  apply(state: ViewerState, version: number): Drawing | Promise<Drawing>
+  draw(state: ViewerState, version: number): Drawing | Promise<Drawing>
   /** Told how the connection stands; see `Status`. */
   onStatus?(status: Status): void
   /**
@@ -59,7 +59,7 @@ export interface AttachOptions {
 
 /**
  * How the connection stands. `closed` is passing: the library reconnects. `ended` is for good:
- * the page shows `message` in place of the Room.
+ * the Viewer shows `message` in place of the Room.
  */
 export type Status =
   | { type: 'connecting' }
@@ -70,7 +70,7 @@ export type Status =
 /** Why a Room let a Viewer go for good. */
 export type EndReason = Extract<ErrorCode, 'protocol-mismatch' | 'room-expired' | 'room-unknown'>
 
-/** What the page shows when its Room lets it go, the library's words whatever the Room said. */
+/** What the Viewer shows when its Room lets it go, the library's words whatever the Room said. */
 export const END_MESSAGES: Record<EndReason, string> = {
   'protocol-mismatch': 'This viewer is out of date: reload the viewer.',
   'room-expired': 'This Room has expired.',
@@ -82,12 +82,14 @@ export interface Remote {
   /**
    * Offer a hand change for the Room to apply. A dragged change, to structure appearance or viewer
    * settings, waits for the gesture to end and goes as one, the patches merged; any other goes at
-   * once, after whatever dragged change is waiting. The page proposes the camera at orbit end.
-   * Ignored while the page applies a state, so the page's own change listeners never echo the
-   * Room's change back to it, and while disconnected, since the resync on rejoining wins.
+   * once, after whatever dragged change is waiting. The Viewer proposes the camera at orbit end,
+   * not on every frame of it. While a state is being drawn, a proposal that would change nothing
+   * in it is the Viewer's change listeners echoing the Room's change, and is dropped; a listener
+   * that fires after `draw` resolves is the Viewer's to quiet. Dropped while disconnected, since
+   * the resync on rejoining wins.
    */
   propose(proposal: Proposal): void
-  /** Close the connection for good: no reconnect, and no further calls to the page. */
+  /** Close the connection for good: no reconnect, and no further calls to the Viewer. */
   detach(): void
 }
 
@@ -96,10 +98,13 @@ const OPEN = 1
 const GESTURE_END_MS = 250
 
 /** The wait before reconnecting grows a second each attempt, to this most. */
-const MOST_RECONNECT_DELAY_MS = 5000
+const MAX_RECONNECT_DELAY_MS = 5000
 
+/** Attach a Viewer to its Room. Throws at once if `url` is not an absolute URL. */
 export function attachRemote(options: AttachOptions): Remote {
-  const { apply, onStatus, gestureEndMs = GESTURE_END_MS } = options
+  const { draw, onStatus, gestureEndMs = GESTURE_END_MS } = options
+  const url = new URL(options.url)
+  url.searchParams.set('room', options.room)
   const createSocket = options.createSocket ?? ((url: string) => new WebSocket(url) as unknown as Socket)
   let socket: Socket | null = null
   let detached = false
@@ -108,8 +113,6 @@ export function attachRemote(options: AttachOptions): Remote {
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
 
   function connect() {
-    const url = new URL(options.url)
-    url.searchParams.set('room', options.room)
     onStatus?.({ type: 'connecting' })
     const current = createSocket(url.toString())
     socket = current
@@ -141,49 +144,49 @@ export function attachRemote(options: AttachOptions): Remote {
   /** Connect again, after a wait; the Room resyncs the Viewer when it joins. */
   function reconnect() {
     attempts += 1
-    const delay = Math.min(1000 * attempts, MOST_RECONNECT_DELAY_MS)
+    const delay = Math.min(1000 * attempts, MAX_RECONNECT_DELAY_MS)
     reconnectTimer = setTimeout(connect, delay)
   }
 
-  // The latest state the Room sent that is not yet being drawn, and whether one is.
+  // The latest state the Room sent that is not yet being drawn, and the one being drawn.
   let next: StateMessage | null = null
-  let busy = false
+  let drawing: ViewerState | null = null
 
   /** Draw a state the Room sent once the one being drawn is done; one sent later replaces it. */
   function receive(message: StateMessage) {
     next = message
-    if (!busy) void drawAll()
+    if (drawing === null) void realizeAll()
   }
 
-  async function drawAll() {
-    busy = true
+  async function realizeAll() {
     while (next !== null && !detached) {
       const { state, version } = next
       next = null
-      await draw(state, version)
+      drawing = state
+      await realize(state, version)
     }
-    busy = false
+    drawing = null
   }
 
   /** Draw a version and report it realized: drawn, or failed. */
-  async function draw(state: ViewerState, version: number) {
-    const drawing = await drawn(state, version)
+  async function realize(state: ViewerState, version: number) {
+    const drawn = await tryDraw(state, version)
     const realized: RealizedMessage = {
       type: 'realized',
       version,
-      kind: drawing.kind,
+      kind: drawn.kind,
       result:
-        drawing.failure === undefined
+        drawn.failure === undefined
           ? { outcome: 'drawn' }
-          : { outcome: 'failed', reason: drawing.failure },
+          : { outcome: 'failed', reason: drawn.failure },
     }
     send(realized)
   }
 
-  /** How the page's `apply` went, a throw counted as a failure. */
-  async function drawn(state: ViewerState, version: number): Promise<Drawing> {
+  /** How the Viewer's `draw` went, a throw counted as a failure. */
+  async function tryDraw(state: ViewerState, version: number): Promise<Drawing> {
     try {
-      return await apply(state, version)
+      return await draw(state, version)
     } catch (error) {
       return { kind: null, failure: error instanceof Error ? error.message : String(error) }
     }
@@ -195,7 +198,7 @@ export function attachRemote(options: AttachOptions): Remote {
     return true
   }
 
-  /** Stop for good: no reconnect, and nothing more to the page. */
+  /** Stop for good: no reconnect, and nothing more to the Viewer. */
   function stop() {
     detached = true
     clearTimeout(reconnectTimer)
@@ -217,8 +220,8 @@ export function attachRemote(options: AttachOptions): Remote {
   let gestureTimer: ReturnType<typeof setTimeout> | undefined
 
   function propose(proposal: Proposal) {
-    // While the page draws the Room's state, what changes is the Room's doing, not a hand's.
-    if (detached || busy) return
+    if (detached) return
+    if (drawing !== null && changesNothing(proposal, drawing)) return
     if (!isDragged(proposal)) {
       endGesture()
       send({ type: 'propose', proposal })
@@ -267,6 +270,42 @@ function merge(earlier: Dragged, later: Dragged): Dragged {
     return { type: earlier.type, patch }
   }
   return later
+}
+
+/**
+ * Whether a proposal would leave `state` as it is: what a Viewer's change listeners propose as
+ * it draws `state`. A step or a reset always changes something.
+ */
+function changesNothing(proposal: Proposal, state: ViewerState): boolean {
+  switch (proposal.type) {
+    case 'load-ensemble':
+      return state.ensemble?.url === proposal.url
+    case 'select-ensemble-group':
+      return state.ensemble?.groupKey === proposal.key
+    case 'select-trace':
+      return state.ensemble?.traceKey === proposal.key
+    case 'set-render-style':
+      return state.renderStyle === proposal.style
+    case 'set-structure-appearance':
+      return within(proposal.patch, state.structureAppearance)
+    case 'set-viewer-settings':
+      return within(proposal.patch, state.viewerSettings)
+    case 'set-camera':
+      return state.camera !== null && within(proposal.camera, state.camera)
+    default:
+      return false
+  }
+}
+
+/** Whether every field of `patch`, however deep, has its value in `whole`. */
+function within(patch: object, whole: object): boolean {
+  return Object.entries(patch).every(([key, value]) => {
+    const current = (whole as Record<string, unknown>)[key]
+    if (typeof value === 'object' && value !== null) {
+      return typeof current === 'object' && current !== null && within(value, current)
+    }
+    return value === undefined || value === current
+  })
 }
 
 function isEndReason(code: ErrorCode): code is EndReason {
