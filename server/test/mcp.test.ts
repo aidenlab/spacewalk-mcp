@@ -115,17 +115,20 @@ describe('open_viewer under ChatGPT', () => {
   })
 
   it('still opens the room it is given', async () => {
+    const room = roomOf(await callTool('open_viewer'))
     const headers = { 'x-openai-session': 'chatgpt-conversation-1' }
-    expect(roomOf(await callTool('open_viewer', { room: '265EDDEXA6' }, headers))).toBe('265EDDEXA6')
+    expect(roomOf(await callTool('open_viewer', { room }, headers))).toBe(room)
   })
 })
 
 describe('open_viewer given a room', () => {
   it('returns the Room link for that Room, read as a model may write it', async () => {
-    const result = await callTool('open_viewer', { room: ' 3k9mzq7wcd ' })
+    const room = roomOf(await callTool('open_viewer'))
 
-    expect(result.structuredContent).toEqual({ room: '3K9MZQ7WCD', roomLink: roomLinkFor('3K9MZQ7WCD') })
-    expect(result.content[1].uri).toBe(roomLinkFor('3K9MZQ7WCD'))
+    const result = await callTool('open_viewer', { room: ` ${room.toLowerCase()} ` })
+
+    expect(result.structuredContent).toEqual({ room, roomLink: roomLinkFor(room) })
+    expect(result.content[1].uri).toBe(roomLinkFor(room))
   })
 
   it('keeps what a live Room holds', async () => {
@@ -151,6 +154,17 @@ describe('open_viewer given a room', () => {
 
     expect(result.isError).toBeFalsy()
     expect(await stub.read()).toMatchObject({ ok: true, state: { renderStyle: 'ball-and-stick' } })
+  })
+
+  it('refuses a Room never opened, with no link, and opens nothing', async () => {
+    const result = await callTool('open_viewer', { room: '3K9MZQ7WCD' })
+
+    expect(result.isError).toBe(true)
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0].text).toBe(
+      'Error: No Room 3K9MZQ7WCD was ever opened. Check the Room id against the reply of open_viewer, or call open_viewer without room to open a new Room.',
+    )
+    expect(await env.ROOM.getByName('3K9MZQ7WCD').read()).toMatchObject({ ok: false, reason: 'room-unknown' })
   })
 
   it('refuses a room that is not a Room id, with no link', async () => {

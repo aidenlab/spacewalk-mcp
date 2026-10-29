@@ -39,7 +39,7 @@ const REOPEN_ROOM_ARGUMENT = z
   .string()
   .optional()
   .describe(
-    'Only when Spacewalk was already opened in this conversation: the Room id from that reply of open_viewer, to get the same Room back. Leave it out the first time: Spacewalk then opens in a new Room, empty.',
+    'Only when Spacewalk was already opened in this conversation: the Room id from that reply of open_viewer, to get the same Room back. Leave it out the first time: Spacewalk then opens in a new Room, empty. A Room id that was never opened is refused.',
   )
 
 function errorReply(text: string) {
@@ -117,9 +117,15 @@ export function registerTools(
     async ({ room }) => {
       const given = givenRoomId(room)
       if (given !== null && typeof given === 'object') return given.refusal
+      // A live Room keeps what it holds; an expired one starts empty. A room the model gives must
+      // have been opened before, but the Host's own Room and a new one need not.
       const roomId = given ?? hostRoomId ?? mintRoomId()
-      // A live Room keeps what it holds; an unknown or expired one starts empty.
-      await roomById(roomId).open()
+      const opened = given === null ? await roomById(roomId).open() : await roomById(roomId).reopen()
+      if (!opened.ok) {
+        return errorReply(
+          `No Room ${roomId} was ever opened. Check the Room id against the reply of open_viewer, or call open_viewer without room to open a new Room.`,
+        )
+      }
       console.log(`[mcp] open_viewer | Room ${roomId}`)
 
       const roomLink = roomLinkFor(viewerUrl, roomId)

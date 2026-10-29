@@ -100,6 +100,16 @@ export class Room extends DurableObject<Env> {
   }
 
   /**
+   * Open a Room that was opened before, as `open` does, live or expired. A Room never opened is
+   * refused, and stays unopened: its id came from a mistake, not from `open_viewer`.
+   */
+  async reopen(): Promise<Result> {
+    const current = await this.live()
+    if (!current.ok && current.reason === 'room-unknown') return current
+    return this.open()
+  }
+
+  /**
    * Apply a proposal to the current viewer state, giving the result a new version. The Room
    * checks the proposal itself: hand changes arrive from Viewers.
    */
