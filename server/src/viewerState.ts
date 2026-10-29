@@ -131,7 +131,7 @@ function stepLightness(color: Color, direction: BackgroundDirection): Color {
 }
 
 // The sRGB transfer function, between three.js's linear components and sRGB's, both in [0, 1].
-function toSrgb(c: number): number {
+export function toSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055
 }
 

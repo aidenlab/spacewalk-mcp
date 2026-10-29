@@ -9,7 +9,8 @@ import {
   JOIN_CARD_URI,
   type JoinCardContent,
 } from './joinCard.ts'
-import type { Refusal, Result, Room } from './room.ts'
+import { changeReply, lookReply } from './reply.ts'
+import type { Refusal, Room } from './room.ts'
 import { mintRoomId, parseRoomId } from './roomId.ts'
 
 export interface ToolDeps {
@@ -23,7 +24,12 @@ export interface ToolDeps {
    * called without `room` acts on it.
    */
   hostRoomId: string | null
+  /** How long a change waits for a Viewer to report it realized; 20 s unless a test says less. */
+  realizeTimeoutMs?: number
 }
+
+/** How long a change waits for the first Viewer to report it realized. */
+const REALIZE_TIMEOUT_MS = 20_000
 
 /**
  * Every tool but `open_viewer` names its Room: the model is told the id by `open_viewer`. Only
@@ -79,16 +85,10 @@ function roomLinkFor(viewerUrl: string, roomId: string): string {
   return roomLink.toString()
 }
 
-/** The reply to an applied proposal: the version the Room has reached, and its viewer state. */
-function stateReply(result: Result & { ok: true }) {
-  const text = `Done. Version ${result.version}.\n\nViewer state:\n${JSON.stringify(result.state, null, 2)}`
-  return { content: [{ type: 'text' as const, text }] }
-}
-
 /** Register the Join card, `open_viewer`, and a tool for each row of `commandTools`. */
 export function registerTools(
   mcpServer: McpServer,
-  { viewerUrl, roomById, hostRoomId }: ToolDeps,
+  { viewerUrl, roomById, hostRoomId, realizeTimeoutMs = REALIZE_TIMEOUT_MS }: ToolDeps,
   commandTools: CommandTool[] = COMMAND_TOOLS,
 ): void {
   mcpServer.registerResource(
@@ -127,6 +127,7 @@ export function registerTools(
         )
       }
       console.log(`[mcp] open_viewer | Room ${roomId}`)
+      const look = await roomById(roomId).look()
 
       const roomLink = roomLinkFor(viewerUrl, roomId)
       const structuredContent: JoinCardContent = { room: roomId, roomLink: roomLink }
@@ -135,7 +136,7 @@ export function registerTools(
         content: [
           {
             type: 'text',
-            text: `Spacewalk Room link:\n${roomLink}\n\nRoom id: ${roomId}. Pass it as room on every later Spacewalk tool call in this conversation.\n\nThe user already sees a card for this. Next step: if you have the Claude desktop app's built-in browser, open this link in it now so Spacewalk shows in the panel beside the conversation. Never use Claude in Chrome or another browser tool, and if the built-in browser is unavailable do not attempt to open the link at all. Then reply in one short sentence and ask what to look at. Do not repeat the link or the Room id in your reply.`,
+            text: `Spacewalk Room link:\n${roomLink}\n\nRoom id: ${roomId}. Pass it as room on every later Spacewalk tool call in this conversation.\n\nThe user already sees a card for this. Next step: if you have the Claude desktop app's built-in browser, open this link in it now so Spacewalk shows in the panel beside the conversation. Never use Claude in Chrome or another browser tool, and if the built-in browser is unavailable do not attempt to open the link at all. Then reply in one short sentence and ask what to look at. Do not repeat the link or the Room id in your reply.${look.ok ? `\n\n${lookReply(look)}` : ''}`,
           },
           {
             type: 'resource_link',
@@ -150,8 +151,8 @@ export function registerTools(
     },
   )
 
-  // Every command tool is the same round trip: one proposal to the Room, and the version it
-  // reaches, or why it refused, becomes the reply.
+  // Every command tool is the same round trip: one proposal to the Room, a wait for a Viewer to
+  // realize it, and a look at the Room; or why it refused, which becomes the reply.
   for (const tool of commandTools) {
     mcpServer.registerTool(
       tool.name,
@@ -167,10 +168,19 @@ export function registerTools(
         if (roomId === null) {
           return errorReply('Pass room: the Room id from the reply of open_viewer.')
         }
-        const result = await roomById(roomId).propose(tool.proposal(args))
+        const stub = roomById(roomId)
+        const result = await stub.propose(tool.proposal(args))
         console.log(`[mcp] ${tool.name} | Room ${roomId} | ${result.ok ? `version ${result.version}` : result.reason}`)
+        if (!result.ok && result.reason === 'refused') {
+          // The Room is live: the model still sees what it holds, and what changed.
+          const look = await stub.look()
+          if (look.ok) return errorReply(`${result.message}\n${lookReply(look)}`)
+        }
         if (!result.ok) return refusalReply(roomId, result)
-        return stateReply(result)
+        const settled = await stub.settle(result.version, realizeTimeoutMs)
+        const look = await stub.look()
+        if (!look.ok) return refusalReply(roomId, look)
+        return { content: [{ type: 'text' as const, text: changeReply(result.version, settled, look) }] }
       },
     )
   }
