@@ -11,6 +11,10 @@ VIEWER_URL = "http://localhost:5173/"
 # The origins a Viewer may connect to /ws from, comma-separated. Any other Origin gets 403.
 VIEWER_ORIGINS = "http://localhost:5173, https://viewer.example/"
 
+# Secrets (`wrangler secret put <NAME>`; for `wrangler dev`, in .dev.vars, see .dev.vars.example):
+# SESSION_HMAC_SECRET - HMAC key deriving Room ids from x-openai-session (ChatGPT);
+#                       unset, those requests fail. There is no fallback key.
+
 # One Room per Room id: it holds the viewer state (ADR 0001).
 [[durable_objects.bindings]]
 name = "ROOM"
