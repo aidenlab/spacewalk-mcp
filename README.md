@@ -7,8 +7,10 @@ The vocabulary used here is defined in [`GLOSSARY.md`](GLOSSARY.md); decisions a
 ## Layout
 
 - `server/`: a Cloudflare Worker, the MCP endpoint (`/mcp`).
-- `viewer/`: the Viewer, a Vite web page that will house Spacewalk.
-- `roundtrip/`: end-to-end tests of the built Viewer against the local Worker.
+- `remote/`: [`@aidenlab/spacewalk-remote`](remote/README.md), published to npm: the library that attaches a Viewer to a Room, and the wire protocol the Worker imports from it.
+- `roundtrip/`: end-to-end tests of the Viewer page, built from [`../spacewalk`](https://github.com/aidenlab/spacewalk), against the local Worker.
+
+The Viewer page itself is built and deployed from the `spacewalk` repo, which pins `@aidenlab/spacewalk-remote` (ADR 0003).
 
 ## Requirements
 
@@ -20,7 +22,6 @@ The vocabulary used here is defined in [`GLOSSARY.md`](GLOSSARY.md); decisions a
 npm install
 cp server/.dev.vars.example server/.dev.vars   # local stand-ins for the Worker's secrets
 npm run dev:server   # the local Worker, on http://localhost:8787
-npm run dev:viewer   # the Viewer, on http://localhost:5173 (in a second terminal)
 ```
 
 ## Checks

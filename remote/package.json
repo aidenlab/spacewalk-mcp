@@ -1,0 +1,40 @@
+{
+  "name": "@aidenlab/spacewalk-remote",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Attach a Spacewalk Viewer to a spacewalk-mcp Room so a model can drive it, and the wire protocol between them",
+  "license": "MIT",
+  "author": {
+    "name": "Douglass Turner"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aidenlab/spacewalk-mcp.git",
+    "directory": "remote"
+  },
+  "bugs": {
+    "url": "https://github.com/aidenlab/spacewalk-mcp/issues"
+  },
+  "keywords": [
+    "spacewalk",
+    "chromatin",
+    "mcp",
+    "visualization"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./protocol": "./src/protocol.ts"
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "typecheck": "tsc"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

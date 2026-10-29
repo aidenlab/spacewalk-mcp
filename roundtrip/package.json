@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "spacewalk-mcp round trip: the built Viewer in a headless browser against the local Worker, driven as the model would",
+  "description": "spacewalk-mcp round trip: the Viewer page, built from ../spacewalk, in a headless browser against the local Worker, driven as the model would",
   "scripts": {
     "typecheck": "tsc"
   },
