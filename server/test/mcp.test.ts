@@ -144,6 +144,17 @@ describe('open_viewer given a room', () => {
     })
   })
 
+  it('shows the viewer state the Room holds and how many Viewers are connected', async () => {
+    const room = roomOf(await callTool('open_viewer'))
+    await env.ROOM.getByName(room).propose({ type: 'set-render-style', style: 'ribbon' })
+
+    const { text } = (await callTool('open_viewer', { room })).content[0]
+
+    expect(text).toContain('Viewers connected: 0.')
+    expect(text).toContain('Viewer state (version 1):')
+    expect(text).toContain('"renderStyle": "ribbon"')
+  })
+
   it('starts an expired Room again, empty', async () => {
     const room = roomOf(await callTool('open_viewer'))
     const stub = env.ROOM.getByName(room)

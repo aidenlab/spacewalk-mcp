@@ -1,10 +1,8 @@
-import { env, runDurableObjectAlarm, SELF } from 'cloudflare:test'
+import { env, runDurableObjectAlarm } from 'cloudflare:test'
 import { PROTOCOL_VERSION } from '@aidenlab/spacewalk-remote/protocol'
 import { describe, expect, it } from 'vitest'
 import type { Result } from '../src/room.ts'
-
-// An origin wrangler.toml lists in VIEWER_ORIGINS.
-const VIEWER_ORIGIN = 'http://localhost:5173'
+import { connect, join, joinAndSync, report, upgrade, VIEWER_ORIGIN } from './viewer.ts'
 
 // Each test opens its own Room, so they share nothing.
 let rooms = 0
@@ -13,12 +11,6 @@ async function openRoom() {
   const room = env.ROOM.getByName(id)
   await room.open()
   return { id, room }
-}
-
-function upgrade(room: string, origin: string | null) {
-  const headers: Record<string, string> = { Upgrade: 'websocket' }
-  if (origin !== null) headers.Origin = origin
-  return SELF.fetch(`https://example.com/ws?room=${room}`, { headers })
 }
 
 describe('connecting to /ws', () => {
@@ -277,65 +269,106 @@ describe('realized reports', () => {
   })
 })
 
-/** Connect to a Room, join it and hear the first sync. */
-async function joinAndSync(room: string) {
-  const viewer = await join(room)
-  await viewer.next()
-  return viewer
-}
+describe('a look at the Room', () => {
+  it('tells the hand changes since the last look, and only once', async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    viewer.send({ type: 'propose', proposal: { type: 'set-render-style', style: 'ribbon' } })
+    await viewer.next()
 
-/**
- * Send a realized report, then wait until the Room has handled it: a socket's messages are
- * handled in order, so once a later join is answered, the report has been too.
- */
-async function report(viewer: Connection, realized: object) {
-  viewer.send({ type: 'realized', ...realized })
-  viewer.send({ type: 'join', protocol: PROTOCOL_VERSION })
-  await viewer.next()
-}
+    expect(await room.look()).toMatchObject({
+      ok: true,
+      version: 1,
+      state: { renderStyle: 'ribbon' },
+      viewers: 1,
+      news: [{ type: 'hand', version: 1, proposal: { type: 'set-render-style', style: 'ribbon' } }],
+    })
+    expect(await room.look()).toMatchObject({ version: 1, news: [] })
+  })
 
-/** Connect to a Room and join it. */
-async function join(room: string) {
-  const viewer = await connect(room)
-  viewer.send({ type: 'join', protocol: PROTOCOL_VERSION })
-  return viewer
-}
+  it("leaves out the model's own changes", async () => {
+    const { room } = await openRoom()
+    await room.propose({ type: 'set-render-style', style: 'ribbon' })
+    expect(await room.look()).toMatchObject({ version: 1, viewers: 0, news: [] })
+  })
+
+  it('tells a Viewer failing to draw a version', async () => {
+    const { id, room } = await openRoom()
+    await room.propose({ type: 'reset-camera' })
+    const viewer = await joinAndSync(id)
+    await report(viewer, { version: 1, kind: null, result: { outcome: 'failed', reason: 'out of memory' } })
+    expect(await room.look()).toMatchObject({
+      news: [{ type: 'failure', version: 1, reason: 'out of memory' }],
+    })
+  })
+
+  it('counts only the Viewers that have joined', async () => {
+    const { id, room } = await openRoom()
+    await joinAndSync(id)
+    await joinAndSync(id)
+    await connect(id)
+    expect(await room.look()).toMatchObject({ viewers: 2 })
+  })
+})
+
+describe('waiting for a change to be realized', () => {
+  const drawn = { outcome: 'drawn' }
+
+  it('answers at once that no viewer is open, when none has joined', async () => {
+    const { room } = await openRoom()
+    await room.propose({ type: 'reset-camera' })
+    expect(await room.settle(1, 5000)).toEqual({ outcome: 'no-viewer' })
+  })
+
+  it('answers drawn when the first Viewer reports it drawn', async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    await viewer.next()
+    const settling = room.settle(1, 5000)
+    await report(viewer, { version: 1, kind: null, result: drawn })
+    expect(await settling).toEqual({ outcome: 'drawn' })
+  })
+
+  it('answers failed, with why, when the first Viewer reports it failed', async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    await viewer.next()
+    const settling = room.settle(1, 5000)
+    await report(viewer, { version: 1, kind: null, result: { outcome: 'failed', reason: 'out of memory' } })
+    expect(await settling).toEqual({ outcome: 'failed', reason: 'out of memory' })
+  })
+
+  it('answers at once for a version already realized', async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    await viewer.next()
+    await report(viewer, { version: 1, kind: null, result: drawn })
+    expect(await room.settle(1, 5000)).toEqual({ outcome: 'drawn' })
+  })
+
+  it('takes a later version realized as standing for it', async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    await room.propose({ type: 'reset-camera' })
+    const settling = room.settle(1, 5000)
+    await report(viewer, { version: 2, kind: null, result: drawn })
+    expect(await settling).toEqual({ outcome: 'drawn' })
+  })
+
+  it('gives up, still drawing, when no Viewer reports in time', async () => {
+    const { id, room } = await openRoom()
+    await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    expect(await room.settle(1, 50)).toEqual({ outcome: 'still-drawing' })
+  })
+})
 
 /** A Room's answer as the state message a Viewer would hear. */
 function versioned(result: Result) {
   if (!result.ok) throw new Error(result.message)
   return { version: result.version, state: result.state }
-}
-
-type Connection = Awaited<ReturnType<typeof connect>>
-
-// A Viewer's end of a /ws connection: what it sends, and the messages it hears, in order.
-async function connect(room: string) {
-  const response = await upgrade(room, VIEWER_ORIGIN)
-  const socket = response.webSocket
-  if (!socket) throw new Error(`No WebSocket: ${response.status}`)
-  socket.accept()
-  const heard: unknown[] = []
-  const waiting: ((message: unknown) => void)[] = []
-  socket.addEventListener('message', (event) => {
-    const message = JSON.parse(event.data as string)
-    const resolve = waiting.shift()
-    if (resolve) resolve(message)
-    else heard.push(message)
-  })
-  const closed = new Promise<CloseEvent>((resolve) => socket.addEventListener('close', resolve))
-  return {
-    send(message: unknown) {
-      socket.send(JSON.stringify(message))
-    },
-    /** The next message this Viewer hears. */
-    next(): Promise<unknown> {
-      if (heard.length > 0) return Promise.resolve(heard.shift())
-      return new Promise((resolve) => waiting.push(resolve))
-    },
-    closed,
-    close() {
-      socket.close()
-    },
-  }
 }
