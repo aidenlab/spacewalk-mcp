@@ -281,6 +281,7 @@ describe('a look at the Room', () => {
       version: 1,
       state: { renderStyle: 'ribbon' },
       viewers: 1,
+      realized: null,
       news: [{ type: 'hand', version: 1, proposal: { type: 'set-render-style', style: 'ribbon' } }],
     })
     expect(await room.look()).toMatchObject({ version: 1, news: [] })
@@ -300,6 +301,14 @@ describe('a look at the Room', () => {
     expect(await room.look()).toMatchObject({
       news: [{ type: 'failure', version: 1, reason: 'out of memory' }],
     })
+  })
+
+  it('tells the latest version a Viewer has realized', async () => {
+    const { id, room } = await openRoom()
+    await room.propose({ type: 'reset-camera' })
+    const viewer = await joinAndSync(id)
+    await report(viewer, { version: 1, kind: null, result: { outcome: 'drawn' } })
+    expect(await room.look()).toMatchObject({ realized: { version: 1, result: { outcome: 'drawn' } } })
   })
 
   it('counts only the Viewers that have joined', async () => {
@@ -327,7 +336,7 @@ describe('waiting for a change to be realized', () => {
     await viewer.next()
     const settling = room.settle(1, 5000)
     await report(viewer, { version: 1, kind: null, result: drawn })
-    expect(await settling).toEqual({ outcome: 'drawn' })
+    expect(await settling).toEqual({ outcome: 'realized', realized: { version: 1, result: drawn } })
   })
 
   it('answers failed, with why, when the first Viewer reports it failed', async () => {
@@ -337,7 +346,10 @@ describe('waiting for a change to be realized', () => {
     await viewer.next()
     const settling = room.settle(1, 5000)
     await report(viewer, { version: 1, kind: null, result: { outcome: 'failed', reason: 'out of memory' } })
-    expect(await settling).toEqual({ outcome: 'failed', reason: 'out of memory' })
+    expect(await settling).toEqual({
+      outcome: 'realized',
+      realized: { version: 1, result: { outcome: 'failed', reason: 'out of memory' } },
+    })
   })
 
   it('answers at once for a version already realized', async () => {
@@ -346,7 +358,7 @@ describe('waiting for a change to be realized', () => {
     await room.propose({ type: 'reset-camera' })
     await viewer.next()
     await report(viewer, { version: 1, kind: null, result: drawn })
-    expect(await room.settle(1, 5000)).toEqual({ outcome: 'drawn' })
+    expect(await room.settle(1, 5000)).toEqual({ outcome: 'realized', realized: { version: 1, result: drawn } })
   })
 
   it('takes a later version realized as standing for it', async () => {
@@ -356,7 +368,7 @@ describe('waiting for a change to be realized', () => {
     await room.propose({ type: 'reset-camera' })
     const settling = room.settle(1, 5000)
     await report(viewer, { version: 2, kind: null, result: drawn })
-    expect(await settling).toEqual({ outcome: 'drawn' })
+    expect(await settling).toEqual({ outcome: 'realized', realized: { version: 2, result: drawn } })
   })
 
   it('gives up, still drawing, when no Viewer reports in time', async () => {
@@ -364,6 +376,40 @@ describe('waiting for a change to be realized', () => {
     await joinAndSync(id)
     await room.propose({ type: 'reset-camera' })
     expect(await room.settle(1, 50)).toEqual({ outcome: 'still-drawing' })
+  })
+
+  // Each of these would answer the same after the wait's full ten seconds; the test's own
+  // two-second limit tells them apart. A Room handles its calls in order, so once a later call is
+  // answered, the wait has begun.
+  it('answers that no viewer is open as soon as the last Viewer leaves', { timeout: 2000 }, async () => {
+    const { id, room } = await openRoom()
+    const viewer = await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    const settling = room.settle(1, 10_000)
+    await room.read()
+    viewer.close()
+    expect(await settling).toEqual({ outcome: 'no-viewer' })
+  })
+
+  it('keeps waiting while another Viewer stays', async () => {
+    const { id, room } = await openRoom()
+    const [leaving, staying] = [await joinAndSync(id), await joinAndSync(id)]
+    await room.propose({ type: 'reset-camera' })
+    const settling = room.settle(1, 10_000)
+    leaving.close()
+    await staying.next()
+    await report(staying, { version: 1, kind: null, result: drawn })
+    expect(await settling).toMatchObject({ outcome: 'realized' })
+  })
+
+  it('gives up, still drawing, as soon as the Room expires', { timeout: 2000 }, async () => {
+    const { id, room } = await openRoom()
+    await joinAndSync(id)
+    await room.propose({ type: 'reset-camera' })
+    const settling = room.settle(1, 10_000)
+    await room.read()
+    await runDurableObjectAlarm(room)
+    expect(await settling).toEqual({ outcome: 'still-drawing' })
   })
 })
 

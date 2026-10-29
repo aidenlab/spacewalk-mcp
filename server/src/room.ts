@@ -55,21 +55,27 @@ export interface Failure {
  */
 export type News =
   | { type: 'hand'; version: number; proposal: Proposal }
-  | { type: 'failure'; version: number; reason: string }
+  | ({ type: 'failure' } & Failure)
 
 export type RealizedResult = { ok: true; latest: Realized | null; failures: Failure[] } | Refusal
 
 /**
- * How a change came out: realized, drawn or failed, by the first Viewer to report it; still
- * drawing when none did in time; or not shown, when no Viewer is open.
+ * How a change came out: realized by the first Viewer to report it or a later version that stood
+ * for it, drawn or failed; still drawing when none did in time; or not shown, when no Viewer is
+ * open.
  */
-export type Settled = Realization | { outcome: 'still-drawing' } | { outcome: 'no-viewer' }
+export type Settled =
+  | { outcome: 'realized'; realized: Realized }
+  | { outcome: 'still-drawing' }
+  | { outcome: 'no-viewer' }
 
 /** The Room as the model sees it in a reply: what it shows, to how many, and what is new. */
 export interface Look extends Versioned {
   ok: true
   /** The Viewers that have joined. */
   viewers: number
+  /** The latest version a Viewer has realized, if any has. */
+  realized: Realized | null
   /** What the model did not cause since its last look, oldest first. */
   news: News[]
 }
@@ -81,6 +87,12 @@ interface Current extends Versioned {
 
 /** What a Viewer shows when its Room has expired. */
 const EXPIRED_MESSAGE = 'This Room has expired.'
+
+/** A tool call waiting for `version` to be realized, and how to answer it. */
+interface Waiter {
+  version: number
+  settled: (settled: Settled) => void
+}
 
 /** What the Room keeps on each socket, surviving hibernation. */
 interface Attachment {
@@ -107,7 +119,7 @@ const NEWS_KEPT = 100
  */
 export class Room extends DurableObject<Env> {
   /** Those waiting for a version to be realized. In memory: a wait never outlives its call. */
-  private waiting: { version: number; realized: (result: Realization) => void }[] = []
+  private waiting: Waiter[] = []
 
   /**
    * Open the Room: a live Room keeps what it holds; a Room never opened starts empty at version
@@ -276,7 +288,8 @@ export class Room extends DurableObject<Env> {
     const latest = await this.latestRealized()
     if (latest === null || version > latest.version) {
       await this.ctx.storage.put(REALIZED, { version, result } satisfies Realized)
-      this.hear(version, result)
+      const realized: Settled = { outcome: 'realized', realized: { version, result } }
+      this.answer(realized, (waiter) => waiter.version <= version)
     }
     if (result.outcome === 'failed') {
       const failures = await this.failures()
@@ -306,29 +319,32 @@ export class Room extends DurableObject<Env> {
    */
   async settle(version: number, timeoutMs: number): Promise<Settled> {
     const latest = await this.latestRealized()
-    if (latest !== null && latest.version >= version) return latest.result
+    if (latest !== null && latest.version >= version) return { outcome: 'realized', realized: latest }
     if (this.viewers().length === 0) return { outcome: 'no-viewer' }
     return new Promise((resolve) => {
-      const waiter = {
+      const waiter: Waiter = {
         version,
-        realized: (result: Realization) => {
+        settled: (settled) => {
           clearTimeout(timeout)
-          resolve(result)
+          resolve(settled)
         },
       }
-      const timeout = setTimeout(() => {
-        this.waiting = this.waiting.filter((other) => other !== waiter)
-        resolve({ outcome: 'still-drawing' })
-      }, timeoutMs)
+      const timeout = setTimeout(() => this.answer({ outcome: 'still-drawing' }, (w) => w === waiter), timeoutMs)
       this.waiting.push(waiter)
     })
   }
 
-  /** A version has been realized: it answers everyone waiting on it or on one before it. */
-  private hear(version: number, result: Realization) {
-    const answered = this.waiting.filter((waiter) => waiter.version <= version)
-    this.waiting = this.waiting.filter((waiter) => waiter.version > version)
-    for (const waiter of answered) waiter.realized(result)
+  /** Answer, and stop waiting for, everyone waiting that `which` picks. */
+  private answer(settled: Settled, which: (waiter: Waiter) => boolean = () => true) {
+    const answered = this.waiting.filter(which)
+    this.waiting = this.waiting.filter((waiter) => !which(waiter))
+    for (const waiter of answered) waiter.settled(settled)
+  }
+
+  /** A Viewer has gone. If it was the last, no change can be shown until another opens. */
+  async webSocketClose(socket: WebSocket) {
+    const others = this.viewers().filter((viewer) => viewer !== socket)
+    if (others.length === 0) this.answer({ outcome: 'no-viewer' })
   }
 
   /**
@@ -339,21 +355,26 @@ export class Room extends DurableObject<Env> {
     const current = await this.live()
     if (!current.ok) return current
     await this.touch()
-    const news = (await this.ctx.storage.get<News[]>(NEWS)) ?? []
+    const news = await this.news()
     await this.ctx.storage.delete(NEWS)
     const { version, state } = current
-    return { ok: true, version, state, viewers: this.viewers().length, news }
+    const realized = await this.latestRealized()
+    return { ok: true, version, state, viewers: this.viewers().length, realized, news }
   }
 
   /** Keep news for the model's next look. */
   private async tell(item: News) {
-    const news = (await this.ctx.storage.get<News[]>(NEWS)) ?? []
+    const news = await this.news()
     news.push(item)
     await this.ctx.storage.put(NEWS, news.slice(-NEWS_KEPT))
   }
 
   private async latestRealized(): Promise<Realized | null> {
     return (await this.ctx.storage.get<Realized>(REALIZED)) ?? null
+  }
+
+  private async news(): Promise<News[]> {
+    return (await this.ctx.storage.get<News[]>(NEWS)) ?? []
   }
 
   private async failures(): Promise<Failure[]> {
@@ -366,6 +387,8 @@ export class Room extends DurableObject<Env> {
     if (!current) return
     await this.ctx.storage.deleteAll()
     await this.ctx.storage.put(EXPIRED, current.version)
+    // Nothing will be drawn now: stop waiting.
+    this.answer({ outcome: 'still-drawing' })
     for (const socket of this.ctx.getWebSockets()) {
       refuse(socket, 'room-expired', EXPIRED_MESSAGE)
     }

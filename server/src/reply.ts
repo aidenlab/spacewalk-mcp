@@ -3,34 +3,49 @@
  * change came out, the changes it did not cause, how many Viewers are connected, and the full
  * viewer state. Pure: the Room keeps all of it, and this only says it.
  */
-import type { Color, Proposal, SceneFixture } from '@aidenlab/spacewalk-remote/protocol'
-import type { Look, News, Settled } from './room.ts'
+import type { Color, Proposal, SceneFixture, StructureAppearance } from '@aidenlab/spacewalk-remote/protocol'
+import type { Look, News, Realized, Settled } from './room.ts'
 import { toSrgb } from './viewerState.ts'
 
 /** The reply to a change the model made: at `version`, it came out `settled`. */
 export function changeReply(version: number, settled: Settled, look: Look): string {
   const later = settled.outcome === 'still-drawing' ? ' How it came out will be in a later reply.' : ''
-  return `${phraseSettled(settled)} Version ${version}.${later}\n${lookReply(withoutTold(look, version, settled))}`
+  return `${phraseSettled(version, settled)} Version ${version}.${later}\n${lookReply(untold(look, version, settled))}`
 }
 
 /**
  * The Room as the model sees it: what changed that it did not cause, how many Viewers are
- * connected, and the full viewer state.
+ * connected and how far they have realized, and the full viewer state.
  */
-export function lookReply({ version, state, viewers, news }: Look): string {
+export function lookReply({ version, state, viewers, realized, news }: Look): string {
   const phrased = phraseNews(news)
-  const changes = phrased
-    ? `Changed in the viewer since your last reply, not by you: ${phrased}.`
-    : 'Nothing changed in the viewer since your last reply that you did not cause.'
-  return `${changes}\nViewers connected: ${viewers}.\n\nViewer state (version ${version}):\n${JSON.stringify(state, null, 2)}`
+  const lines = [
+    phrased
+      ? `Changed since your last reply, not by you: ${phrased}.`
+      : 'Nothing changed since your last reply that you did not cause.',
+    `Viewers connected: ${viewers}.`,
+  ]
+  // How a change the reply gave up on came out, once a Viewer caught up.
+  if (realized) lines.push(`A Viewer has realized up to version ${realized.version}, ${phraseResult(realized)}.`)
+  return `${lines.join('\n')}\n\nViewer state (version ${version}):\n${JSON.stringify(state, null, 2)}`
 }
 
-function phraseSettled(settled: Settled): string {
+function phraseResult({ result }: Realized): string {
+  return result.outcome === 'drawn' ? 'drawn' : `failed: ${result.reason}`
+}
+
+/**
+ * How the model's change at `version` came out. A later version realized stands for it: drawn,
+ * so was its change; failed, the failure is that later change's, told among the news.
+ */
+function phraseSettled(version: number, settled: Settled): string {
   switch (settled.outcome) {
-    case 'drawn':
-      return 'Applied and drawn.'
-    case 'failed':
-      return `Applied, but the viewer failed to draw it: ${settled.reason}.`
+    case 'realized': {
+      const { result } = settled.realized
+      if (result.outcome === 'drawn') return 'Applied and drawn.'
+      if (settled.realized.version > version) return 'Applied, then a later change failed to draw.'
+      return `Applied, but the Viewer failed to draw it: ${result.reason}.`
+    }
     case 'still-drawing':
       return 'Applied, still drawing.'
     case 'no-viewer':
@@ -39,16 +54,19 @@ function phraseSettled(settled: Settled): string {
 }
 
 /**
- * The look without the failure the outcome already told: the first one with its reason, on the
- * model's version or the later one that stood for it.
+ * The look less what the outcome already told: how far the Viewers have realized, and the failure
+ * of the model's own version.
  */
-function withoutTold(look: Look, version: number, settled: Settled): Look {
-  if (settled.outcome !== 'failed') return look
+function untold(look: Look, version: number, settled: Settled): Look {
+  if (settled.outcome !== 'realized') return look
+  const rest = { ...look, realized: null }
+  const { result } = settled.realized
+  if (settled.realized.version !== version || result.outcome !== 'failed') return rest
   const told = look.news.findIndex(
-    (item) => item.type === 'failure' && item.version >= version && item.reason === settled.reason,
+    (item) => item.type === 'failure' && item.version === version && item.reason === result.reason,
   )
-  if (told === -1) return look
-  return { ...look, news: look.news.toSpliced(told, 1) }
+  if (told === -1) return rest
+  return { ...rest, news: look.news.toSpliced(told, 1) }
 }
 
 /** Every camera move phrases the same, and all of them collapse into one. */
@@ -70,7 +88,7 @@ export function phraseNews(news: News[]): string {
 }
 
 function phraseItem(item: News): string[] {
-  if (item.type === 'failure') return [`a viewer failed to draw version ${item.version}: ${item.reason}`]
+  if (item.type === 'failure') return [`a Viewer failed to draw version ${item.version}: ${item.reason}`]
   return phraseProposal(item.proposal)
 }
 
@@ -89,7 +107,9 @@ function phraseProposal(proposal: Proposal): string[] {
     case 'step-stick-radius':
       return [`made the sticks ${proposal.direction === 'up' ? 'thicker' : 'thinner'}`]
     case 'set-structure-appearance':
-      return Object.entries(proposal.patch).map(([key, value]) => phraseAppearance(key, value))
+      return (Object.keys(proposal.patch) as (keyof StructureAppearance)[]).map((key) =>
+        phraseAppearance(key, proposal.patch),
+      )
     case 'set-viewer-settings': {
       const { background, gnomon, groundPlane, referenceRuler } = proposal.patch
       return [
@@ -109,24 +129,24 @@ function phraseProposal(proposal: Proposal): string[] {
 }
 
 /** One field of a structure appearance patch. */
-function phraseAppearance(key: string, value: unknown): string {
+function phraseAppearance(key: keyof StructureAppearance, patch: Partial<StructureAppearance>): string {
   switch (key) {
     case 'ballRadiusIndex':
-      return `set the ball radius to step ${value}`
+      return `set the ball radius to step ${patch.ballRadiusIndex}`
     case 'stickRadiusIndex':
-      return `set the stick radius to step ${value}`
+      return `set the stick radius to step ${patch.stickRadiusIndex}`
     case 'sticksVisible':
-      return value ? 'showed the sticks' : 'hid the sticks'
+      return patch.sticksVisible ? 'showed the sticks' : 'hid the sticks'
     case 'pointSizeRadiusFraction':
-      return value === null ? 'reset the point size' : `set the point size to ${value}`
+      return patch.pointSizeRadiusFraction === null
+        ? 'reset the point size'
+        : `set the point size to ${patch.pointSizeRadiusFraction}`
     case 'pointOpacity':
-      return `set the point opacity to ${value}`
+      return `set the point opacity to ${patch.pointOpacity}`
     case 'colorRamp':
-      return `changed the color ramp to ${value}`
+      return `changed the color ramp to ${patch.colorRamp}`
     case 'isCircular':
-      return value ? 'drew the genome as circular' : 'drew the genome as linear'
-    default:
-      return `changed the ${key}`
+      return patch.isCircular ? 'drew the genome as circular' : 'drew the genome as linear'
   }
 }
 

@@ -29,7 +29,7 @@ describe('the changes the model did not cause', () => {
 
   it('include a Viewer failing to draw a version', () => {
     const news: News[] = [{ type: 'failure', version: 4, reason: 'could not fetch the ensemble' }]
-    expect(phraseNews(news)).toBe('a viewer failed to draw version 4: could not fetch the ensemble')
+    expect(phraseNews(news)).toBe('a Viewer failed to draw version 4: could not fetch the ensemble')
   })
 
   it('are nothing when nothing happened', () => {

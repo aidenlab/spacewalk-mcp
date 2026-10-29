@@ -196,7 +196,7 @@ describe('the reply to a command tool', () => {
     const room = await openRoom()
     const viewer = await joinAndSync(room)
     const reply = await callWhileRealizing(room, viewer, { outcome: 'failed', reason: 'out of memory' })
-    expect(reply).toMatch(/^Applied, but the viewer failed to draw it: out of memory\. Version 1\./)
+    expect(reply).toMatch(/^Applied, but the Viewer failed to draw it: out of memory\. Version 1\./)
     expect(reply.match(/out of memory/g)).toHaveLength(1)
   })
 
@@ -209,7 +209,32 @@ describe('the reply to a command tool', () => {
     await viewer.next()
     await report(viewer, { version: 1, kind: null, result: { outcome: 'failed', reason: 'out of memory' } })
     const later = await callWhileRealizing(room, viewer, { outcome: 'drawn' })
-    expect(later).toContain('a viewer failed to draw version 1: out of memory')
+    expect(later).toContain('a Viewer failed to draw version 1: out of memory')
+  })
+
+  it('tells a change drawn after the reply gave up on it in a later reply', async () => {
+    const room = await openRoom()
+    const viewer = await joinAndSync(room)
+    await call('set_render_style', { room, style: 'ribbon' }, null, 50)
+    await viewer.next()
+    await report(viewer, { version: 1, kind: null, result: { outcome: 'drawn' } })
+
+    const later = text(await call('open_viewer', { room }))
+    expect(later).toContain('A Viewer has realized up to version 1, drawn.')
+  })
+
+  it("does not take a later version's failure for its own change's", async () => {
+    const room = await openRoom()
+    const viewer = await joinAndSync(room)
+    const replying = call('set_render_style', { room, style: 'ribbon' })
+    await viewer.next()
+    viewer.send({ type: 'propose', proposal: { type: 'step-ball-radius', direction: 'up' } })
+    await viewer.next()
+    await report(viewer, { version: 2, kind: null, result: { outcome: 'failed', reason: 'out of memory' } })
+
+    const reply = text(await replying)
+    expect(reply).toMatch(/^Applied, then a later change failed to draw\. Version 1\./)
+    expect(reply).toContain('made the balls bigger; a Viewer failed to draw version 2: out of memory')
   })
 
   it('tells the hand changes since the previous reply, once', async () => {
@@ -227,10 +252,10 @@ describe('the reply to a command tool', () => {
 
     const reply = await callWhileRealizing(room, viewer, { outcome: 'drawn' })
     expect(reply).toContain(
-      'Changed in the viewer since your last reply, not by you: made the balls bigger; the camera was moved.',
+      'Changed since your last reply, not by you: made the balls bigger; the camera was moved.',
     )
     const next = await callWhileRealizing(room, viewer, { outcome: 'drawn' })
-    expect(next).toContain('Nothing changed in the viewer since your last reply that you did not cause.')
+    expect(next).toContain('Nothing changed since your last reply that you did not cause.')
   })
 })
 
