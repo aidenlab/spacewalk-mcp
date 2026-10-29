@@ -1,3 +1,6 @@
 # Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars: it is git-ignored.
 # The values stand in for `wrangler secret put`. `wrangler types` reads this file
 # for the names of the secrets.
+
+# Any string works locally; without it the x-openai-session (ChatGPT) path fails.
+SESSION_HMAC_SECRET=local-dev-only
