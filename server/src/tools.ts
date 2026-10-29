@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { COMMAND_TOOLS, type CommandTool } from './commandTools.ts'
+import { COMMAND_TOOLS, ENSEMBLE_POINTER, type CommandTool } from './commandTools.ts'
+import { exampleEnsembles, exampleListReply, type ExampleEnsembles } from './exampleEnsembles.ts'
 import {
   JOIN_CARD_HTML,
   JOIN_CARD_META,
@@ -26,10 +27,18 @@ export interface ToolDeps {
   hostRoomId: string | null
   /** How long a change waits for a Viewer to report it realized; 20 s unless a test says less. */
   realizeTimeoutMs?: number
+  /** The example ensembles; R2's list, kept a few minutes, unless a test gives its own. */
+  exampleEnsembles?: ExampleEnsembles
 }
 
 /** How long a change waits for the first Viewer to report it realized. */
 const REALIZE_TIMEOUT_MS = 20_000
+
+/**
+ * The example list from R2. Every request gets a fresh McpServer, so the list is kept here, for
+ * as long as the isolate lives.
+ */
+const EXAMPLE_ENSEMBLES = exampleEnsembles()
 
 /**
  * Every tool but `open_viewer` names its Room: the model is told the id by `open_viewer`. Only
@@ -85,10 +94,19 @@ function roomLinkFor(viewerUrl: string, roomId: string): string {
   return roomLink.toString()
 }
 
-/** Register the Join card, `open_viewer`, and a tool for each row of `commandTools`. */
+/**
+ * Register the Join card, `open_viewer`, `list_example_ensembles`, and a tool for each row of
+ * `commandTools`.
+ */
 export function registerTools(
   mcpServer: McpServer,
-  { viewerUrl, roomById, hostRoomId, realizeTimeoutMs = REALIZE_TIMEOUT_MS }: ToolDeps,
+  {
+    viewerUrl,
+    roomById,
+    hostRoomId,
+    realizeTimeoutMs = REALIZE_TIMEOUT_MS,
+    exampleEnsembles: examples = EXAMPLE_ENSEMBLES,
+  }: ToolDeps,
   commandTools: CommandTool[] = COMMAND_TOOLS,
 ): void {
   mcpServer.registerResource(
@@ -147,6 +165,27 @@ export function registerTools(
           },
         ],
         structuredContent,
+      }
+    },
+  )
+
+  // Not a change: the list is R2's, not the Room's, so no room is needed.
+  mcpServer.registerTool(
+    'list_example_ensembles',
+    {
+      title: 'List the example ensembles',
+      description:
+        `List example ensembles to load into Spacewalk: the hosted .sw files of the full Spacewalk app's Load From List, by group, each with its name and URL. ${ENSEMBLE_POINTER} Use this when the user asks what there is to look at, or names an example without its URL; then pass the URL to load_ensemble.`,
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        return { content: [{ type: 'text' as const, text: exampleListReply(await examples()) }] }
+      } catch (error) {
+        console.error('[mcp] list_example_ensembles:', error)
+        return errorReply(
+          'Could not get the list of example ensembles just now. Try again later, or ask the user for the URL of a .sw file to pass to load_ensemble.',
+        )
       }
     },
   )

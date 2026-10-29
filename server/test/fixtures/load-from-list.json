@@ -1,0 +1,51 @@
+{
+  "groups": [
+    {
+      "label": "Traces — bucket root",
+      "files": [
+        {
+          "name": "H1-hESC_chr10-0-135Mb",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/H1-hESC_chr10-0-135Mb.sw"
+        },
+        {
+          "name": "H1-hESC_chr1-0-249Mb",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/H1-hESC_chr1-0-249Mb.sw"
+        },
+        {
+          "name": "A549_chr21-28-30Mb",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/A549_chr21-28-30Mb.sw"
+        }
+      ]
+    },
+    {
+      "label": "Large ensembles — olga-dudchenko",
+      "files": [
+        {
+          "name": "Woolly_Mammoth_Direct_Inv",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/olga-dudchenko/Woolly_Mammoth_Direct_Inv.sw"
+        },
+        {
+          "name": "GSE268050_Woolly_Mammoth_Direct_Inv",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/olga-dudchenko/GSE268050_Woolly_Mammoth_Direct_Inv.sw"
+        }
+      ]
+    },
+    {
+      "label": "Point clouds — pointcloud",
+      "files": [
+        {
+          "name": "guy-nir-egfr",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/pointcloud/guy-nir-egfr.sw"
+        },
+        {
+          "name": "guy-nir-chr9-walk",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/pointcloud/guy-nir-chr9-walk.sw"
+        },
+        {
+          "name": "guy-nir-chr22-walk",
+          "url": "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/pointcloud/guy-nir-chr22-walk.sw"
+        }
+      ]
+    }
+  ]
+}
