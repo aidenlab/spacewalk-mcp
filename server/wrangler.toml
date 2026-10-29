@@ -8,6 +8,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # The Viewer's address. The Viewer is hosted on its own origin, not by this Worker.
 VIEWER_URL = "http://localhost:5173/"
+# The origins a Viewer may connect to /ws from, comma-separated. Any other Origin gets 403.
+VIEWER_ORIGINS = "http://localhost:5173, https://viewer.example/"
 
 # One Room per Room id: it holds the viewer state (ADR 0001).
 [[durable_objects.bindings]]

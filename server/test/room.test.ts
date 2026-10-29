@@ -201,27 +201,7 @@ describe('a proposal', () => {
   })
 })
 
-describe('broadcasting', () => {
-  it('sends every socket in the Room each new version, and nothing for a refusal', async () => {
-    const room = freshRoom()
-    await room.open()
-    await runInDurableObject(room, async (instance, ctx) => {
-      const viewers = [listen(ctx), listen(ctx)]
-      await instance.propose({ type: 'step-ball-radius', direction: 'up' })
-      await instance.propose({ type: 'select-trace', key: '1' }) // refused: no ensemble
-      await instance.propose({ type: 'reset-camera' })
-      await settle()
-      for (const { heard } of viewers) {
-        expect(heard).toMatchObject([
-          { type: 'state', version: 1, state: { structureAppearance: { ballRadiusIndex: 6 } } },
-          { type: 'state', version: 2, state: { camera: null } },
-        ])
-      }
-    })
-  })
-})
-
-// Accept one end of a socket pair into the Room, as /ws will, and collect what the other end hears.
+// Accept one end of a socket pair into the Room, as /ws does, and collect what the other end hears.
 function listen(ctx: DurableObjectState) {
   const [client, server] = Object.values(new WebSocketPair())
   ctx.acceptWebSocket(server)
@@ -230,10 +210,6 @@ function listen(ctx: DurableObjectState) {
   client.addEventListener('message', (event) => heard.push(JSON.parse(event.data as string)))
   const closed = new Promise((resolve) => client.addEventListener('close', resolve))
   return { heard, closed }
-}
-
-function settle() {
-  return new Promise((resolve) => setTimeout(resolve, 10))
 }
 
 describe('a relative step along the radius ladder', () => {

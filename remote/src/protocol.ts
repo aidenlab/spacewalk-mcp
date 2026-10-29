@@ -144,16 +144,56 @@ export const JoinMessage = z.object({
 })
 export type JoinMessage = z.infer<typeof JoinMessage>
 
+/** Viewer → Room: a hand change, proposed for the Room to apply. */
+export const ProposeMessage = z.object({
+  type: z.literal('propose'),
+  proposal: Proposal,
+})
+export type ProposeMessage = z.infer<typeof ProposeMessage>
+
+/** How a Viewer's attempt to draw a version went: drawn, or failed, and why. */
+export const Realization = z.discriminatedUnion('outcome', [
+  z.object({ outcome: z.literal('drawn') }),
+  z.object({ outcome: z.literal('failed'), reason: z.string() }),
+])
+export type Realization = z.infer<typeof Realization>
+
+/**
+ * Viewer → Room: the Viewer has caught up to a version, drawn or failed in the attempt. It says
+ * what kind of ensemble that version shows, once it knows; null when it does not, or nothing is
+ * loaded.
+ */
+export const RealizedMessage = z.object({
+  type: z.literal('realized'),
+  version: z.int().nonnegative(),
+  kind: EnsembleKind.nullable(),
+  result: Realization,
+})
+export type RealizedMessage = z.infer<typeof RealizedMessage>
+
 /** Every message a Viewer sends a Room. */
-export const ViewerMessage = z.discriminatedUnion('type', [JoinMessage])
+export const ViewerMessage = z.discriminatedUnion('type', [
+  JoinMessage,
+  ProposeMessage,
+  RealizedMessage,
+])
 export type ViewerMessage = z.infer<typeof ViewerMessage>
 
-/** Why a Room refused a Viewer. */
+/**
+ * Why a Room refused a Viewer, or something it sent. The first three end the connection; after a
+ * refused proposal the Room resyncs the Viewer, which puts its hand change back.
+ */
 export const ErrorCode = z.enum([
   // The Viewer speaks another protocol version: reload the viewer.
   'protocol-mismatch',
   // The Room has expired and never gets its contents back.
   'room-expired',
+  // No Room has this id: it was never opened.
+  'room-unknown',
+  // The hand change does not apply to the current viewer state.
+  'proposal-refused',
+  // The message is not one this protocol version knows.
+  'malformed-message',
 ])
 export type ErrorCode = z.infer<typeof ErrorCode>
 
