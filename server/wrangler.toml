@@ -8,3 +8,12 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 # The Viewer's address. The Viewer is hosted on its own origin, not by this Worker.
 VIEWER_URL = "http://localhost:5173/"
+
+# One Room per Room id: it holds the viewer state (ADR 0001).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
