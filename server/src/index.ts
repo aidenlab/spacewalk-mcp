@@ -79,7 +79,8 @@ function jsonRpcError(status: number, code: number, message: string, id: JsonRpc
 /**
  * Workers are stateless, so every request gets a fresh McpServer and transport. The model names
  * its Room on every tool call. ChatGPT also sends `x-openai-session` on every request, and its
- * conversation's Room id is derived from that by HMAC under SESSION_HMAC_SECRET.
+ * conversation's Room id is derived from that by HMAC under SESSION_HMAC_SECRET: the Room a tool
+ * acts on when the model leaves `room` out.
  */
 async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
   let body: JsonRpcMessage | JsonRpcMessage[]
@@ -105,7 +106,7 @@ async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
     const mcpServer = new McpServer({ name: 'spacewalk', version: '0.0.0' })
     registerTools(mcpServer, {
       viewerUrl: env.VIEWER_URL,
-      room: (roomId) => env.ROOM.getByName(roomId),
+      roomById: (roomId) => env.ROOM.getByName(roomId),
       hostRoomId,
     })
     const transport = new WebStandardStreamableHTTPServerTransport({

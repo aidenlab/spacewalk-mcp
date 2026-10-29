@@ -15,7 +15,7 @@ export function mintRoomId(): string {
 
 /**
  * The Room id for ChatGPT's `x-openai-session`, by HMAC-SHA256 under `secret`: one ChatGPT
- * conversation always gets the same Room, and the header's value never appears in a Join link.
+ * conversation always gets the same Room, and the header's value never appears in a Room link.
  */
 export async function deriveRoomId(value: string, secret: string): Promise<string> {
   const encoder = new TextEncoder()

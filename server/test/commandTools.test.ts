@@ -22,11 +22,12 @@ const TABLE: CommandTool[] = [
   },
 ]
 
-async function connect() {
+/** A Host's MCP session; `hostRoomId` is the Room ChatGPT's conversation gives it. */
+async function connect(hostRoomId: string | null = null) {
   const server = new McpServer({ name: 'spacewalk', version: '0.0.0' })
   registerTools(
     server,
-    { viewerUrl: 'http://localhost:5173/', room: (id) => env.ROOM.getByName(id), hostRoomId: null },
+    { viewerUrl: 'http://localhost:5173/', roomById: (id) => env.ROOM.getByName(id), hostRoomId },
     TABLE,
   )
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -35,8 +36,12 @@ async function connect() {
   return client
 }
 
-async function call(name: string, args: Record<string, unknown>): Promise<ToolResult> {
-  const client = await connect()
+async function call(
+  name: string,
+  args: Record<string, unknown>,
+  hostRoomId: string | null = null,
+): Promise<ToolResult> {
+  const client = await connect(hostRoomId)
   return (await client.callTool({ name, arguments: args })) as ToolResult
 }
 
@@ -46,12 +51,12 @@ async function openRoom(): Promise<string> {
 }
 
 describe('listing a command tool', () => {
-  it('lists its own arguments and a room it must be given', async () => {
+  it('lists its own arguments and a room, which only ChatGPT may leave out', async () => {
     const { tools } = await (await connect()).listTools()
     const tool = tools.find(({ name }) => name === 'set_render_style')
     expect(tool).toMatchObject({ title: 'Set the render style' })
     expect(Object.keys(tool!.inputSchema.properties!)).toEqual(['style', 'room'])
-    expect(tool!.inputSchema.required).toEqual(['style', 'room'])
+    expect(tool!.inputSchema.required).toEqual(['style'])
   })
 })
 
@@ -106,5 +111,29 @@ describe('calling a command tool', () => {
     expect(result.content[0].text).toMatch(/expired/)
     expect(result.content[0].text).toContain(`call open_viewer with room ${room}`)
     expect(result.content[0].text).toMatch(/empty/)
+  })
+})
+
+describe('calling a command tool without a room', () => {
+  it("under ChatGPT, acts on the conversation's Room", async () => {
+    const opened = await call('open_viewer', {}, '4DQ8TW1BNX')
+    expect(opened.structuredContent).toMatchObject({ room: '4DQ8TW1BNX' })
+
+    const result = await call('set_render_style', { style: 'ribbon' }, '4DQ8TW1BNX')
+
+    expect(result.isError).toBeFalsy()
+    expect(await env.ROOM.getByName('4DQ8TW1BNX').read()).toMatchObject({ state: { renderStyle: 'ribbon' } })
+  })
+
+  it('under ChatGPT, still acts on the room it is given', async () => {
+    const room = await openRoom()
+    await call('set_render_style', { room, style: 'ribbon' }, '5EWJ0Y7RCP')
+    expect(await env.ROOM.getByName(room).read()).toMatchObject({ state: { renderStyle: 'ribbon' } })
+  })
+
+  it.each([undefined, ' '])('elsewhere, asks the model to pass room (%j)', async (room) => {
+    const result = await call('set_render_style', { room, style: 'ribbon' })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toBe('Error: Pass room: the Room id from the reply of open_viewer.')
   })
 })

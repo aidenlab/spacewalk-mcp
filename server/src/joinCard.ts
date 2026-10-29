@@ -1,7 +1,7 @@
 /**
  * The Join card: the project's only MCP App (SEP-1865), shown in the
  * Conversation by Hosts that render MCP Apps when `open_viewer` is called. One
- * line of status and an "Open Spacewalk" button; the button opens the Join link
+ * line of status and an "Open Spacewalk" button; the button opens the Room link
  * through the Host (`ui/open-link`), which Claude desktop routes to its Side
  * panel. It never holds the 3D viewer: the Host's sandbox forbids framing other
  * origins. Hosts without MCP Apps ignore the metadata and use the text link.
@@ -26,7 +26,7 @@ export const JOIN_CARD_TOOL_META = { ui: { resourceUri: JOIN_CARD_URI }, 'ui/res
 export interface JoinCardContent {
   [key: string]: unknown
   room: string
-  joinUrl: string
+  roomLink: string
 }
 
 export const JOIN_CARD_HTML = `<!DOCTYPE html>
@@ -38,32 +38,33 @@ export const JOIN_CARD_HTML = `<!DOCTYPE html>
 </style></head>
 <body>
 <div class="join-card">
-  <div class="join-card__status" role="status">Waiting for the Join link…</div>
+  <div class="join-card__status" role="status">Waiting for the Room link…</div>
   <button class="join-card__open" hidden>Open Spacewalk</button>
 </div>
 <script type="module">
-  import { App } from "${APP_CLIENT}";
-  const statusElement = document.querySelector(".join-card__status");
-  const openButton = document.querySelector(".join-card__open");
-  const app = new App({ name: "Spacewalk", version: "1.0.0" });
-  let joinUrl;
+  import { App } from '${APP_CLIENT}'
+  const statusElement = document.querySelector('.join-card__status')
+  const openButton = document.querySelector('.join-card__open')
+  const app = new App({ name: 'Spacewalk', version: '1.0.0' })
+  let roomLink
   const render = () => {
-    let ctx;
-    try { ctx = app.getHostContext?.(); } catch (e) { ctx = undefined; }
-    if (!joinUrl) return;
-    statusElement.textContent = ctx?.platform === "desktop"
-      ? "Spacewalk is opening in the panel on the right, which can take half a minute. Only if it has not appeared by then, press Open Spacewalk; if Claude then asks, choose “Always allow for this website”."
-      : "Spacewalk is ready.";
-    openButton.hidden = false;
-  };
-  app.ontoolresult = ({ structuredContent: sc, content }) => {
-    joinUrl = sc?.joinUrl ?? content?.find((c) => c.type === "text")?.text.match(/https?:\\/\\/\\S+/)?.[0];
-    if (!joinUrl) { statusElement.textContent = "No Join link in the tool result."; return; }
-    render();
-  };
-  app.onhostcontextchanged = render;
-  openButton.onclick = () => { if (joinUrl) app.openLink({ url: joinUrl }); };
-  await app.connect();
-  render();
+    let hostContext
+    try { hostContext = app.getHostContext?.() } catch { hostContext = undefined }
+    if (!roomLink) return
+    statusElement.textContent = hostContext?.platform === 'desktop'
+      ? 'Spacewalk is opening in the panel on the right, which can take half a minute. Only if it has not appeared by then, press Open Spacewalk; if Claude then asks, choose “Always allow for this website”.'
+      : 'Spacewalk is ready.'
+    openButton.hidden = false
+  }
+  app.ontoolresult = ({ structuredContent, content }) => {
+    roomLink = structuredContent?.roomLink
+      ?? content?.find((block) => block.type === 'text')?.text.match(/https?:\\/\\/\\S+/)?.[0]
+    if (!roomLink) { statusElement.textContent = 'No Room link in the tool result.'; return }
+    render()
+  }
+  app.onhostcontextchanged = render
+  openButton.onclick = () => { if (roomLink) app.openLink({ url: roomLink }) }
+  await app.connect()
+  render()
 </script>
 </body></html>`

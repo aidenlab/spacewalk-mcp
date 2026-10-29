@@ -10,7 +10,7 @@ function roomOf(result: ToolResult): string {
 }
 
 /** VIEWER_URL in wrangler.toml, carrying the Room id. */
-function joinLinkFor(room: string) {
+function roomLinkFor(room: string) {
   return `http://localhost:5173/?room=${room}`
 }
 
@@ -65,21 +65,21 @@ describe('the /mcp endpoint', () => {
 })
 
 describe('open_viewer without a room', () => {
-  it('opens a new Room, empty, and returns its Join link as text and as a resource link', async () => {
+  it('opens a new Room, empty, and returns its Room link as text and as a resource link', async () => {
     const result = await callTool('open_viewer')
 
     const room = roomOf(result)
     expect(room).toMatch(ROOM_ID)
     expect(result.isError).toBeFalsy()
     // On a line of its own, so Hosts render it clickable.
-    expect(result.content[0].text).toContain(`\n${joinLinkFor(room)}\n`)
+    expect(result.content[0].text).toContain(`\n${roomLinkFor(room)}\n`)
     expect(result.content[1]).toMatchObject({
       type: 'resource_link',
-      uri: joinLinkFor(room),
+      uri: roomLinkFor(room),
       name: 'Open Spacewalk',
       mimeType: 'text/html',
     })
-    expect(result.structuredContent).toEqual({ room, joinUrl: joinLinkFor(room) })
+    expect(result.structuredContent).toEqual({ room, roomLink: roomLinkFor(room) })
     expect(await env.ROOM.getByName(room).read()).toMatchObject({ ok: true, version: 0 })
   })
 
@@ -121,11 +121,11 @@ describe('open_viewer under ChatGPT', () => {
 })
 
 describe('open_viewer given a room', () => {
-  it('returns the Join link for that Room, read as a model may write it', async () => {
+  it('returns the Room link for that Room, read as a model may write it', async () => {
     const result = await callTool('open_viewer', { room: ' 3k9mzq7wcd ' })
 
-    expect(result.structuredContent).toEqual({ room: '3K9MZQ7WCD', joinUrl: joinLinkFor('3K9MZQ7WCD') })
-    expect(result.content[1].uri).toBe(joinLinkFor('3K9MZQ7WCD'))
+    expect(result.structuredContent).toEqual({ room: '3K9MZQ7WCD', roomLink: roomLinkFor('3K9MZQ7WCD') })
+    expect(result.content[1].uri).toBe(roomLinkFor('3K9MZQ7WCD'))
   })
 
   it('keeps what a live Room holds', async () => {
