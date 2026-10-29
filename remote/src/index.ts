@@ -1,4 +1,13 @@
 /**
- * The attach library: connects a Viewer to a Room. Empty until `attachRemote` lands.
+ * The attach library: connects a Viewer to a Room.
  */
-export {}
+export {
+  attachRemote,
+  END_MESSAGES,
+  type AttachOptions,
+  type Drawing,
+  type EndReason,
+  type Remote,
+  type Socket,
+  type Status,
+} from './attachRemote.ts'

@@ -1,6 +1,6 @@
 {
   "name": "@aidenlab/spacewalk-remote",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Attach a Spacewalk Viewer to a spacewalk-mcp Room so a model can drive it, and the wire protocol between them",
   "license": "MIT",
