@@ -1,0 +1,60 @@
+name: Publish @aidenlab/spacewalk-remote to npm
+
+# Publishing a GitHub release tagged v<version> publishes remote/ at that version to npm.
+# The remote is the only package this repo publishes, so a v tag always means a remote version.
+# The server is deployed with wrangler, never published; a release with any other tag is not
+# this workflow's.
+#
+# Authentication is npm trusted publishing (OIDC): no npm token is stored in this repo. The
+# package's settings on npmjs.com must name this repository and this workflow file
+# (publish-remote.yml) as a trusted publisher, and the job's environment (npm) as its
+# environment. Provenance is attached automatically.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write   # lets the job mint the OIDC token npm trusts
+
+jobs:
+  test:
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:run
+
+  publish:
+    needs: test
+    if: startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-latest
+    # Required reviewers on this environment make every publish wait for an approval
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24   # trusted publishing needs npm >= 11.5.1, which Node 24 ships
+          registry-url: https://registry.npmjs.org
+
+      - name: Check the release tag matches remote/package.json
+        run: |
+          pkg="$(node -p "require('./remote/package.json').version")"
+          if [ "${GITHUB_REF_NAME#v}" != "$pkg" ]; then
+            echo "::error::Release tag $GITHUB_REF_NAME does not match remote version $pkg"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      # A GitHub pre-release goes to the `next` dist-tag, so `npm install @aidenlab/spacewalk-remote` is unaffected
+      - name: Publish
+        run: npm publish --workspace remote --tag ${{ github.event.release.prerelease && 'next' || 'latest' }}
