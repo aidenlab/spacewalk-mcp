@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
-import { COMMAND_TOOLS, type CommandTool } from './commandTools.ts'
+import { COMMAND_TOOLS, ENSEMBLE_POINTER, type CommandTool } from './commandTools.ts'
 import { exampleEnsembles, exampleListReply, type ExampleEnsembles } from './exampleEnsembles.ts'
 import {
   JOIN_CARD_HTML,
@@ -175,7 +175,7 @@ export function registerTools(
     {
       title: 'List the example ensembles',
       description:
-        'List example ensembles to load into Spacewalk: the hosted .sw files of the full Spacewalk app\'s Load From List, by group, each with its name and URL. An ensemble is the collection of traces in one .sw file; the user may call it "the model" or "the structure". Use this when the user asks what there is to look at, or names an example without its URL; then pass the URL to load_ensemble.',
+        `List example ensembles to load into Spacewalk: the hosted .sw files of the full Spacewalk app's Load From List, by group, each with its name and URL. ${ENSEMBLE_POINTER} Use this when the user asks what there is to look at, or names an example without its URL; then pass the URL to load_ensemble.`,
       inputSchema: {},
     },
     async () => {

@@ -1,5 +1,5 @@
 import { z, type ZodRawShape } from 'zod'
-import { RadiusDirection, type Proposal } from '@aidenlab/spacewalk-remote/protocol'
+import { RadiusDirection, type Proposal, type RenderStyle } from '@aidenlab/spacewalk-remote/protocol'
 
 /**
  * A tool whose whole job is one proposal to the Room. It is registered with a `room` argument
@@ -13,6 +13,20 @@ export interface CommandTool {
   proposal: (args: Record<string, unknown>) => Proposal
 }
 
+/**
+ * What an ensemble is, for a tool description, and the one place "the model" may stand for it:
+ * a pointer, never a name.
+ */
+export const ENSEMBLE_POINTER =
+  'An ensemble is the collection of traces in one .sw file (the user may call this "the model").'
+
+/** The render styles a person chooses, as the tool takes them and as the protocol has them. */
+const RENDER_STYLES = {
+  ball_and_stick: 'ball-and-stick',
+  ribbon: 'ribbon',
+} as const satisfies Record<string, RenderStyle>
+type RenderStyleName = keyof typeof RENDER_STYLES
+
 /** Which way a radius step goes: up is bigger, down is smaller. */
 const RADIUS_DIRECTION = RadiusDirection.describe('up for one radius step bigger, down for one smaller.')
 
@@ -25,7 +39,7 @@ export const COMMAND_TOOLS: CommandTool[] = [
     name: 'load_ensemble',
     title: 'Load an ensemble',
     description:
-      'Load an ensemble into Spacewalk from the URL of its .sw file. An ensemble is the collection of traces in one .sw file; the user may call it "the model" or "the structure". It opens at its default ensemble group and trace. Use list_example_ensembles for URLs of ensembles to try.',
+      `Load an ensemble into Spacewalk from the URL of its .sw file. ${ENSEMBLE_POINTER} It opens at its default ensemble group and trace. Use list_example_ensembles for URLs of ensembles to try.`,
     inputSchema: { url: z.url().describe('The URL of the .sw file.') },
     proposal: ({ url }) => ({ type: 'load-ensemble', url: url as string }),
   },
@@ -41,12 +55,11 @@ export const COMMAND_TOOLS: CommandTool[] = [
     name: 'set_render_style',
     title: 'Set the render style',
     description:
-      'Choose how the 3D structure is drawn: ball_and_stick (a ball at each genomic extent, sticks joining them) or ribbon (a smooth tube through them). Only for an ensemble of traces: a point-cloud ensemble is always drawn as a point cloud, and this is refused on one.',
-    inputSchema: { style: z.enum(['ball_and_stick', 'ribbon']).describe('The render style.') },
-    proposal: ({ style }) => ({
-      type: 'set-render-style',
-      style: style === 'ball_and_stick' ? 'ball-and-stick' : 'ribbon',
-    }),
+      'Choose how the 3D structure is drawn: ball_and_stick (a ball at each genomic extent, sticks joining them) or ribbon (a smooth tube through them). Only for an ensemble of traces: a point-cloud ensemble is always drawn as a point cloud. Once a Viewer has reported the ensemble a point cloud (kind in the viewer state), this is refused; before then, the Viewer reports the failure to draw it.',
+    inputSchema: {
+      style: z.enum(Object.keys(RENDER_STYLES) as [RenderStyleName]).describe('The render style.'),
+    },
+    proposal: ({ style }) => ({ type: 'set-render-style', style: RENDER_STYLES[style as RenderStyleName] }),
   },
   {
     name: 'step_ball_radius',
