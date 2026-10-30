@@ -30,3 +30,13 @@ npm run dev:server   # the local Worker, on http://localhost:8787
 npm run typecheck
 npm run test:run
 ```
+
+## Deploying
+
+```sh
+scripts/deploy-wizard.sh
+```
+
+The [deploy wizard](scripts/deploy-wizard.sh) deploys the dev environment (the Worker `spacewalk-mcp-dev` and the Pages project `spacewalk-viewer-dev`) and walks you through connecting Claude desktop, claude.ai, ChatGPT desktop and ChatGPT web. It is re-runnable.
+
+[`docs/dev-check.md`](docs/dev-check.md) is the cheat sheet for `scripts/dev-check.mjs`, which calls one tool on the dev Worker from the terminal: a smoke test without a Host.

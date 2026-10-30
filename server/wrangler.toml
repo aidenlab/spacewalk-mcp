@@ -1,9 +1,12 @@
 # The top level is local development (`wrangler dev`) and the tests; it is never
-# deployed. Deployments will be named environments added below.
+# deployed. Deployments are the named environments at the bottom.
 name = "spacewalk-mcp"
 main = "src/index.ts"
 compatibility_date = "2026-08-01"
 compatibility_flags = ["nodejs_compat"]
+# The Cloudflare account that owns the 3dg.io zone, named so that a login with access to several
+# accounts does not have to choose. scripts/deploy-wizard.sh reads it for the Pages commands too.
+account_id = "1eadb18bb8557fd1bd06b1d0310a902e"
 
 [vars]
 # The Viewer's address. The Viewer is hosted on its own origin, not by this Worker.
@@ -11,7 +14,7 @@ VIEWER_URL = "http://localhost:5173/"
 # The origins a Viewer may connect to /ws from, comma-separated. Any other Origin gets 403.
 VIEWER_ORIGINS = "http://localhost:5173, https://viewer.example/"
 
-# Secrets (`wrangler secret put <NAME>`; for `wrangler dev`, in .dev.vars, see .dev.vars.example):
+# Secrets (`wrangler secret put <NAME> --env <env>`, see scripts/deploy-wizard.sh; for `wrangler dev`, in .dev.vars, see .dev.vars.example):
 # SESSION_HMAC_SECRET - HMAC key deriving Room ids from x-openai-session (ChatGPT);
 #                       unset, those requests fail. There is no fallback key.
 
@@ -23,3 +26,29 @@ class_name = "Room"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Room"]
+
+# The dev deployment: Worker spacewalk-mcp-dev at https://spacewalk-mcp-dev.3dg.io (Hosts use /mcp,
+# Viewers /ws), paired with the Pages project spacewalk-viewer-dev at
+# https://spacewalk-viewer-dev.3dg.io. Wrangler creates the DNS record for the custom domain. No
+# *.workers.dev hostname and no preview URLs, so there is one public address. Named environments do
+# not inherit `vars` or `durable_objects`, so those are repeated; migrations are top-level and apply
+# to every environment.
+[env.dev]
+name = "spacewalk-mcp-dev"
+routes = [
+  { pattern = "spacewalk-mcp-dev.3dg.io", custom_domain = true },
+]
+workers_dev = false
+preview_urls = false
+
+[env.dev.observability.logs]
+enabled = true
+
+[[env.dev.durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[env.dev.vars]
+# The Viewer page, not the full app at /: the full app ignores ?room=.
+VIEWER_URL = "https://spacewalk-viewer-dev.3dg.io/viewer.html"
+VIEWER_ORIGINS = "https://spacewalk-viewer-dev.3dg.io, https://spacewalk-viewer-dev.pages.dev"
