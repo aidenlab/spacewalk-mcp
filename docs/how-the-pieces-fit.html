@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How spacewalk-mcp Fits Together</title>
+<style>
+/* Layout idea: one reading column. The two diagrams carry the model, and tables hold the lookups. */
+:root {
+  --ink: #1c2630;
+  --muted: #566472;
+  --paper: #f8fafb;
+  --panel: #e9eff2;
+  --line: #c6d1d8;
+  --accent: #0a6c76;
+  --accent-wash: #d6edef;
+  --code-bg: #1f2a35;
+  --code-ink: #e6edf2;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #e4eaef;
+    --muted: #9dabb7;
+    --paper: #141b22;
+    --panel: #1f2932;
+    --line: #3a4955;
+    --accent: #62c7d1;
+    --accent-wash: #173a40;
+    --code-bg: #0c1218;
+    --code-ink: #dfe7ed;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e4eaef;
+  --muted: #9dabb7;
+  --paper: #141b22;
+  --panel: #1f2932;
+  --line: #3a4955;
+  --accent: #62c7d1;
+  --accent-wash: #173a40;
+  --code-bg: #0c1218;
+  --code-ink: #dfe7ed;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--sans);
+}
+main {
+  max-width: 840px;
+  margin: 0 auto;
+  padding: 48px 20px 80px;
+  display: grid;
+  gap: 44px;
+}
+main > * { min-width: 0; }
+section { display: grid; gap: 14px; }
+section > * { min-width: 0; margin: 0; }
+h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
+h1 { font-size: 34px; font-weight: 650; }
+h2 { font-size: 24px; font-weight: 650; padding-top: 18px; border-top: 1px solid var(--line); }
+h3 { font-size: 18px; font-weight: 650; margin-top: 8px; }
+p, li { max-width: 68ch; }
+ul, ol { padding-left: 22px; display: grid; gap: 6px; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font: 400 0.87em var(--mono); background: var(--panel); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  font: 400 14px/1.6 var(--mono);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+figure { margin: 0; display: grid; gap: 10px; overflow-x: auto; }
+figcaption { font-size: 15px; color: var(--muted); max-width: 68ch; }
+svg { display: block; width: 100%; min-width: 620px; height: auto; color: var(--ink); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.45; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 650; }
+.lede { font-size: 19px; color: var(--muted); }
+.answers { background: var(--panel); border-left: 4px solid var(--accent); padding: 18px 20px; display: grid; gap: 14px; }
+.answers__item { display: grid; gap: 2px; }
+.answers__question { font-weight: 650; }
+.answers__item p { margin: 0; }
+.diagram__box { fill: var(--paper); stroke: var(--line); stroke-width: 1.5; }
+.diagram__box--repo { fill: var(--panel); }
+.diagram__box--accent { fill: var(--accent-wash); stroke: var(--accent); }
+.diagram__title { fill: currentColor; font: 650 14px var(--sans); }
+.diagram__repo-title { fill: currentColor; font: 650 15px var(--sans); }
+.diagram__text { fill: var(--muted); font: 400 12.5px var(--sans); }
+.diagram__line { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.diagram__line--accent { stroke: var(--accent); stroke-width: 2; }
+.diagram__label { fill: currentColor; font: 400 12.5px var(--sans); }
+.diagram__label--accent { fill: var(--accent); font-weight: 600; }
+.diagram__head { fill: currentColor; }
+.diagram__head--accent { fill: var(--accent); }
+@media (max-width: 480px) { h1 { font-size: 28px; } main { padding-top: 28px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header style="display:grid;gap:12px">
+  <h1>How spacewalk-mcp fits together</h1>
+  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026.</p>
+</header>
+
+<div class="answers">
+  <div class="answers__item">
+    <div class="answers__question">Who uses the remote?</div>
+    <p>Two things: the server and the Viewer. The server reads the <code>remote/</code> folder directly. The Viewer gets a copy.</p>
+  </div>
+  <div class="answers__item">
+    <div class="answers__question">Where do the tarball and npm come in?</div>
+    <p>Only in how the Viewer gets its copy. The server never touches either one.</p>
+  </div>
+  <div class="answers__item">
+    <div class="answers__question">Do I choose between the tarball and npm?</div>
+    <p>No. They're the same file in two different places. The Viewer uses the tarball until the package is on npm, then it switches. That switch is one line in one file.</p>
+  </div>
+  <div class="answers__item">
+    <div class="answers__question">Why does this project have so many <code>package.json</code> files?</div>
+    <p>There are four, and only one of them describes something meant to be shared with other projects. The other three just organize work inside this project.</p>
+  </div>
+</div>
+
+<section>
+  <h2>What runs when someone uses it</h2>
+  <p>Three things talk to each other. A person chats with Claude or ChatGPT, and the 3D structure appears in a web page beside the conversation.</p>
+  <figure>
+    <svg viewBox="0 0 760 190" role="img" aria-label="Claude or ChatGPT sends tool calls to the server. The server and the Viewer stay connected, with viewer state going to the Viewer and hand changes going back to the server.">
+      <defs>
+        <marker id="flow-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+      <rect class="diagram__box" x="10" y="30" width="180" height="130" rx="6"/>
+      <text class="diagram__title" x="100" y="85" text-anchor="middle">Claude or ChatGPT</text>
+      <text class="diagram__text" x="100" y="106" text-anchor="middle">the conversation</text>
+
+      <rect class="diagram__box" x="290" y="30" width="180" height="130" rx="6"/>
+      <text class="diagram__title" x="380" y="62" text-anchor="middle">Server</text>
+      <text class="diagram__text" x="380" y="82" text-anchor="middle">runs on Cloudflare</text>
+      <text class="diagram__text" x="380" y="100" text-anchor="middle">holds the Rooms</text>
+      <rect class="diagram__box diagram__box--accent" x="310" y="116" width="140" height="30" rx="4"/>
+      <text class="diagram__label" x="380" y="136" text-anchor="middle">remote: message rules</text>
+
+      <rect class="diagram__box" x="570" y="30" width="180" height="130" rx="6"/>
+      <text class="diagram__title" x="660" y="62" text-anchor="middle">Viewer</text>
+      <text class="diagram__text" x="660" y="82" text-anchor="middle">web page in a browser</text>
+      <text class="diagram__text" x="660" y="100" text-anchor="middle">built from the spacewalk repo</text>
+      <rect class="diagram__box diagram__box--accent" x="590" y="116" width="140" height="30" rx="4"/>
+      <text class="diagram__label" x="660" y="136" text-anchor="middle">remote: all of it</text>
+
+      <line class="diagram__line" x1="190" y1="95" x2="288" y2="95" marker-end="url(#flow-head)"/>
+      <text class="diagram__label" x="240" y="85" text-anchor="middle">tool calls</text>
+
+      <line class="diagram__line" x1="470" y1="78" x2="568" y2="78" marker-end="url(#flow-head)"/>
+      <text class="diagram__label" x="520" y="68" text-anchor="middle">viewer state</text>
+      <line class="diagram__line" x1="568" y1="112" x2="472" y2="112" marker-end="url(#flow-head)"/>
+      <text class="diagram__label" x="520" y="130" text-anchor="middle">hand changes</text>
+    </svg>
+    <figcaption>The remote is the part that lets the Viewer and the server talk. It appears on both sides so they follow the same message rules.</figcaption>
+  </figure>
+  <p>A <strong>Room</strong> ties one conversation to the Viewers showing it, and it's the only place the current view is recorded. When the model makes a tool call, the Room updates and every Viewer in it redraws. When someone changes something by hand, the Viewer asks the Room to make the change.</p>
+  <p><strong>Today, all of this only runs on your laptop.</strong> Nothing is deployed yet. <a href="https://github.com/aidenlab/spacewalk-mcp/issues/11">Issue #11</a> covers the first deployment.</p>
+</section>
+
+<section>
+  <h2>Where the code lives</h2>
+  <p>The code is in two GitHub repos. This is the picture to keep in your head:</p>
+  <figure>
+    <svg viewBox="0 0 760 420" role="img" aria-label="The spacewalk-mcp repo holds server, remote and roundtrip folders. The server reads the remote folder directly. A tarball copy of remote sits on a GitHub release, and the Viewer code in the spacewalk repo downloads it.">
+      <defs>
+        <marker id="map-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="map-head-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head diagram__head--accent" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+
+      <rect class="diagram__box diagram__box--repo" x="10" y="10" width="440" height="400" rx="8"/>
+      <text class="diagram__repo-title" x="28" y="36">spacewalk-mcp repo</text>
+
+      <rect class="diagram__box" x="30" y="50" width="400" height="50" rx="5"/>
+      <text class="diagram__title" x="46" y="72">package.json at the top</text>
+      <text class="diagram__text" x="46" y="90">lists the three folders below, so one install sets them all up</text>
+
+      <rect class="diagram__box" x="30" y="130" width="150" height="100" rx="5"/>
+      <text class="diagram__title" x="105" y="168" text-anchor="middle">server/</text>
+      <text class="diagram__text" x="105" y="188" text-anchor="middle">the Server</text>
+
+      <rect class="diagram__box diagram__box--accent" x="280" y="130" width="150" height="100" rx="5"/>
+      <text class="diagram__title" x="355" y="168" text-anchor="middle">remote/</text>
+      <text class="diagram__text" x="355" y="188" text-anchor="middle">the original</text>
+
+      <line class="diagram__line" x1="180" y1="180" x2="278" y2="180" marker-end="url(#map-head)"/>
+      <text class="diagram__label" x="230" y="152" text-anchor="middle">reads the</text>
+      <text class="diagram__label" x="230" y="170" text-anchor="middle">folder</text>
+
+      <rect class="diagram__box" x="30" y="310" width="150" height="80" rx="5"/>
+      <text class="diagram__title" x="105" y="342" text-anchor="middle">roundtrip/</text>
+      <text class="diagram__text" x="105" y="362" text-anchor="middle">tests, not written yet</text>
+
+      <rect class="diagram__box diagram__box--accent" x="280" y="310" width="150" height="80" rx="5"/>
+      <text class="diagram__title" x="355" y="342" text-anchor="middle">Tarball</text>
+      <text class="diagram__text" x="355" y="362" text-anchor="middle">on a GitHub release</text>
+
+      <line class="diagram__line diagram__line--accent" x1="355" y1="230" x2="355" y2="307" marker-end="url(#map-head-accent)"/>
+      <text class="diagram__label diagram__label--accent" x="365" y="273">copied to</text>
+
+      <rect class="diagram__box diagram__box--repo" x="520" y="10" width="230" height="400" rx="8"/>
+      <text class="diagram__repo-title" x="538" y="36">spacewalk repo</text>
+
+      <rect class="diagram__box" x="540" y="130" width="190" height="100" rx="5"/>
+      <text class="diagram__title" x="635" y="160" text-anchor="middle">Viewer code</text>
+      <text class="diagram__text" x="635" y="180" text-anchor="middle">src/roomAttachment.js</text>
+      <text class="diagram__text" x="635" y="198" text-anchor="middle">its own package.json</text>
+
+      <path class="diagram__line diagram__line--accent" d="M430 350 H635 V233" marker-end="url(#map-head-accent)"/>
+      <text class="diagram__label diagram__label--accent" x="578" y="340" text-anchor="middle">downloads</text>
+    </svg>
+    <figcaption>The two teal arrows are the tarball's whole journey. When the package reaches npm, the tarball box moves to npm, and nothing else in this picture changes.</figcaption>
+  </figure>
+  <p>The remote lives in <code>spacewalk-mcp</code> so the message rules are written once. If each repo had its own copy, nothing would stop them from drifting apart. <a href="adr/0003-remote-and-protocol-live-here-the-viewer-page-does-not.md">ADR 0003</a> records that decision.</p>
+</section>
+
+<section>
+  <h2>The package.json files, one by one</h2>
+  <p>A <code>package.json</code> file marks a folder as a package and lists what that folder depends on. Having one doesn't mean the folder is ever shared. Four of these five are marked private, which stops npm from publishing them.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>File</th><th>Name inside it</th><th>What it's for</th><th>Shared with other projects?</th></tr></thead>
+    <tbody>
+      <tr><td><code>spacewalk-mcp/package.json</code></td><td><code>spacewalk-mcp</code></td><td>Organizes the three folders below, so one <code>npm install</code> and one <code>npm test</code> cover them all.</td><td>No</td></tr>
+      <tr><td><code>server/package.json</code></td><td><code>spacewalk-mcp-server</code></td><td>The server. It will be sent directly to Cloudflare.</td><td>No</td></tr>
+      <tr><td><strong><code>remote/package.json</code></strong></td><td><strong><code>@aidenlab/spacewalk-remote</code></strong></td><td>The remote: the code that connects a Viewer to a Room, plus the message rules.</td><td><strong>Yes, this is the only one</strong></td></tr>
+      <tr><td><code>roundtrip/package.json</code></td><td><code>spacewalk-mcp-roundtrip</code></td><td>End-to-end tests of the Viewer and server together. No tests exist yet, and it doesn't use the remote directly.</td><td>No</td></tr>
+      <tr><td><code>spacewalk/package.json</code><br>(the other repo)</td><td><code>spacewalk</code></td><td>The full Spacewalk app and the Viewer. Built into websites.</td><td>No</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>How each one gets the remote</h2>
+  <p>Think of the server as reading the original and the Viewer as keeping a photocopy.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th>Server</th><th>Viewer</th></tr></thead>
+    <tbody>
+      <tr><th>What it uses</th><td>The message rules only (<code>remote/src/protocol.ts</code>)</td><td>All of it, through <code>attachRemote</code></td></tr>
+      <tr><th>Where it asks for it</th><td><code>server/package.json</code></td><td><code>spacewalk/package.json</code></td></tr>
+      <tr><th>What that file says</th><td><code>"*"</code>, which means any version. npm finds the folder in this repo and links to it.</td><td>The tarball's web address</td></tr>
+      <tr><th>When it sees a change</th><td>Right away, while you're developing</td><td>After a new tarball is released and the address is updated</td></tr>
+      <tr><th>Affected by tarball or npm?</th><td><strong>No</strong></td><td><strong>Yes</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>Why the difference matters</h3>
+  <p>Once deployed, the server and the Viewer each hold a fixed copy of the message rules, and those copies can fall out of step. If you change the rules and raise <code>PROTOCOL_VERSION</code>, a Room refuses any Viewer with the old number and shows "This viewer is out of date: reload the viewer." Reloading only helps once a Viewer built with the new tarball has been deployed.</p>
+  <p>So a change to the message rules takes three steps: release a new tarball, update the Viewer's address, then deploy both the server and the Viewer.</p>
+</section>
+
+<section>
+  <h2>Tarball and npm: the same file on different shelves</h2>
+  <p>A tarball is a single compressed file holding a folder of code. npm stores every package this way. Publishing to npm puts the file on npm's shelf, where it's found by name. Our stopgap puts the identical file on a GitHub release, where it's found by web address.</p>
+  <p>Only this line in <code>spacewalk/package.json</code> changes between the three stages:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Stage</th><th>The line says</th><th>Good for</th></tr></thead>
+    <tbody>
+      <tr><td>Folder link (before)</td><td><code>file:../spacewalk-mcp/remote</code></td><td>Your laptop only</td></tr>
+      <tr><td><strong>Tarball (now)</strong></td><td><code>https://github.com/aidenlab/spacewalk-mcp/releases/download/remote-0.1.0/aidenlab-spacewalk-remote-0.1.0.tgz</code></td><td>Anywhere</td></tr>
+      <tr><td>npm (later)</td><td><code>"0.1.0"</code></td><td>Anywhere, and the normal long-term setup</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <h3>Which one is in use right now</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Where</th><th>What it uses</th></tr></thead>
+    <tbody>
+      <tr><td><code>spacewalk</code> branch <code>main</code></td><td>Nothing. The remote arrives when issue #130 merges.</td></tr>
+      <tr><td><code>spacewalk</code> branch <code>viewer-attaches-to-room</code></td><td>The tarball</td></tr>
+      <tr><td>The <code>spacewalk</code> folder on your laptop</td><td>Still the folder link, until you next run <code>npm install</code> there</td></tr>
+      <tr><td>npm</td><td>The package isn't published yet, so nothing can use it from there</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The <code>README.md</code> and ADR 0003 in this repo describe the remote as published to npm. That's the plan and not yet the case.</p>
+</section>
+
+<section>
+  <h2>What to do when</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>You want to</th><th>Do this</th></tr></thead>
+    <tbody>
+      <tr><td>Work on the server</td><td>Nothing special. Tarballs and npm don't apply.</td></tr>
+      <tr><td>Work on the Viewer without changing the remote</td><td>Run <code>npm install</code> in <code>spacewalk</code> once, then work as usual.</td></tr>
+      <tr><td>Change the remote and try it in the Viewer on your laptop</td><td>In <code>spacewalk</code>, run <code>npm install ../spacewalk-mcp/remote --no-save</code>. This links your folder without changing any tracked file.</td></tr>
+      <tr><td>Make a remote change available to everyone</td><td>Raise the version, merge to <code>main</code>, release a new tarball, then update the address in <code>spacewalk/package.json</code>.</td></tr>
+      <tr><td>Move to npm when access arrives</td><td>Publish through <code>publish-remote.yml</code>, then replace the address with the version number.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The exact commands for the last two rows are in the <a href="spacewalk-remote-tarball-stopgap.html">tarball stopgap guide</a>.</p>
+</section>
+
+<section>
+  <h2>How the pieces find each other</h2>
+  <p>The server and the Viewer run at separate web addresses, and each one has to be told where the other is. These settings cause more confusion than the packages do, and they're easy to overlook because they live in different repos.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Setting</th><th>Where it's set</th><th>What it does</th><th>On your laptop</th><th>Planned in #11</th></tr></thead>
+    <tbody>
+      <tr><td><code>VITE_SERVER_URL</code></td><td><code>spacewalk</code>, when the Viewer is built</td><td>Tells the Viewer where the server is</td><td><code>http://localhost:8787</code></td><td><code>spacewalk-mcp-dev.3dg.io</code></td></tr>
+      <tr><td><code>VIEWER_URL</code></td><td><code>server/wrangler.toml</code></td><td>Tells the server what address to put in a Room link</td><td><code>http://localhost:5173/viewer.html</code>, passed with <code>--var</code></td><td><code>spacewalk-viewer-dev.3dg.io</code></td></tr>
+      <tr><td><code>VIEWER_ORIGINS</code></td><td><code>server/wrangler.toml</code></td><td>Lists the websites allowed to connect to a Room</td><td><code>http://localhost:5173</code></td><td>The Viewer's own address</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Separately, you add the server's address to Claude or ChatGPT as a Connector. That's how the conversation finds the server.</p>
+</section>
+
+<section>
+  <h2>How each piece gets to the outside world</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Piece</th><th>Goes to</th><th>How</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Server</td><td>Cloudflare Workers</td><td><code>wrangler deploy</code>, which also packs in the message rules from <code>remote/</code></td><td>Not yet (#11)</td></tr>
+      <tr><td>Viewer</td><td>Cloudflare Pages</td><td>Built from <code>spacewalk</code>, including whichever remote its <code>package.json</code> names</td><td>Not yet (#11)</td></tr>
+      <tr><td>Remote</td><td>GitHub release, later npm</td><td><code>gh release create</code>, later <code>publish-remote.yml</code></td><td><a href="https://github.com/aidenlab/spacewalk-mcp/releases/tag/remote-0.1.0">Released on GitHub</a>, not on npm</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The full Spacewalk app at <code>spacewalk.aidenlab.org</code> is a separate website, even though its code shares a repo with the Viewer. The server uses one service from it: the link shortener (<code>workers/sw-shortlink</code> in the <code>spacewalk</code> repo), for shareable links.</p>
+</section>
+
+<section>
+  <h2>Words used here</h2>
+  <div class="table-wrap">
+  <table>
+    <tbody>
+      <tr><th>Repo</th><td>One project on GitHub. There are two here: <code>spacewalk-mcp</code> and <code>spacewalk</code>.</td></tr>
+      <tr><th>Package</th><td>A folder of code with a <code>package.json</code> file.</td></tr>
+      <tr><th>Server</th><td>The code in <code>server/</code>. It runs as a Cloudflare Worker, Cloudflare's name for a small program it hosts. Conversations and Viewers both connect to it.</td></tr>
+      <tr><th>Viewer</th><td>The web page showing Spacewalk's 3D view, attached to one Room.</td></tr>
+      <tr><th>Room</th><td>What ties one conversation to the Viewers showing it.</td></tr>
+      <tr><th>Remote</th><td>The package <code>@aidenlab/spacewalk-remote</code>, the code in <code>remote/</code>.</td></tr>
+      <tr><th>Message rules</th><td>The exact form of the messages passed between a Viewer and a Room. The code calls this the protocol.</td></tr>
+      <tr><th>Tarball</th><td>A single compressed file holding a folder of code. It ends in <code>.tgz</code>.</td></tr>
+      <tr><th>Pin</th><td>Naming one exact version of a package, so everyone installs the same code.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The full project vocabulary is in <a href="../GLOSSARY.md"><code>GLOSSARY.md</code></a>.</p>
+</section>
+
+</main>
+</body>
+</html>
