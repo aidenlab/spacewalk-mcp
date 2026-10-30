@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spacewalk-remote Tarball Stopgap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a single reading column, with wide blocks for the flow diagram, tables and commands. */
+:root {
+  --ink: #1d2733;
+  --muted: #586675;
+  --paper: #f7f9fa;
+  --panel: #e9eef1;
+  --line: #cdd6dc;
+  --accent: #0b6e78;
+  --warn: #9a4a12;
+  --code-bg: #1f2a35;
+  --code-ink: #e6edf2;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #e4eaef;
+    --muted: #9dabb7;
+    --paper: #141b22;
+    --panel: #1f2932;
+    --line: #34424e;
+    --accent: #5cc4ce;
+    --warn: #e8a06a;
+    --code-bg: #0c1218;
+    --code-ink: #dfe7ed;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e4eaef;
+  --muted: #9dabb7;
+  --paper: #141b22;
+  --panel: #1f2932;
+  --line: #34424e;
+  --accent: #5cc4ce;
+  --warn: #e8a06a;
+  --code-bg: #0c1218;
+  --code-ink: #dfe7ed;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--sans);
+}
+main {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 48px 20px 80px;
+  display: grid;
+  gap: 44px;
+}
+main > * { min-width: 0; }
+section { display: grid; gap: 14px; }
+section > * { min-width: 0; margin: 0; }
+h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
+h1 { font-size: 34px; font-weight: 600; }
+h2 { font-size: 24px; font-weight: 600; padding-top: 18px; border-top: 1px solid var(--line); }
+h3 { font-size: 18px; font-weight: 600; margin-top: 10px; }
+p, li { max-width: 66ch; }
+ul, ol { padding-left: 22px; display: grid; gap: 6px; }
+a { color: var(--accent); }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+code { font: 400 0.88em var(--mono); background: var(--panel); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+pre {
+  background: var(--code-bg);
+  color: var(--code-ink);
+  font: 400 14px/1.6 var(--mono);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+pre code { background: none; padding: 0; font-size: inherit; overflow-wrap: normal; }
+.lede { font-size: 19px; color: var(--muted); }
+.summary { background: var(--panel); border-left: 4px solid var(--accent); padding: 16px 18px; display: grid; gap: 10px; }
+.summary p { margin: 0; }
+.warn { border-left: 4px solid var(--warn); padding: 2px 0 2px 14px; }
+.warn strong { color: var(--warn); }
+.flow { display: grid; gap: 18px; }
+.flow-row { display: grid; gap: 8px; }
+.flow-label { font-weight: 600; font-size: 15px; }
+.flow-steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+.flow-step { flex: 1 1 150px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; font-size: 14.5px; line-height: 1.4; }
+.flow-step--skipped { background: none; border-style: dashed; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px 9px 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; }
+td code { white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 480px) { h1 { font-size: 28px; } main { padding-top: 28px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header style="display:grid;gap:12px">
+  <h1>The spacewalk-remote tarball stopgap</h1>
+  <p class="lede" style="margin:0">What a tarball is, what we set up on October 30, 2026, and how to work with it until the package is on npm.</p>
+</header>
+
+<div class="summary">
+  <p><strong>In one paragraph:</strong> an npm package is just a compressed file with a name attached. npm normally looks up the name and downloads that file for you. We can't publish to the <code>@aidenlab</code> scope yet, so we put the same file on a GitHub release and told <code>spacewalk</code> to download it from there. To the viewer code, it's the same package either way.</p>
+  <p><strong>Your one rule:</strong> once a tarball is released, never replace it. A change means a new version and a new release.</p>
+</div>
+
+<section>
+  <h2>What a tarball is</h2>
+  <p>A tarball is one file that holds a folder. It's built in two steps, which is where the double extension comes from:</p>
+  <ul>
+    <li><strong>tar</strong> joins many files into one, keeping their names and folders.</li>
+    <li><strong>gzip</strong> compresses that one file. The result is <code>.tar.gz</code>, or <code>.tgz</code> for short.</li>
+  </ul>
+  <p>It's the same idea as a <code>.zip</code> file, using the format Unix and npm have standardized on. There's nothing else inside: no installer and no special npm wrapping, only the files.</p>
+  <p>Here is everything in ours, <code>aidenlab-spacewalk-remote-0.1.0.tgz</code>, 8.6 kB in total:</p>
+<pre><code>package/LICENSE
+package/package.json        name, version, and dependencies (zod)
+package/README.md
+package/src/attachRemote.ts
+package/src/index.ts
+package/src/protocol.ts</code></pre>
+  <p>npm requires the top-level <code>package/</code> folder, and <code>npm pack</code> adds it for you. The list of what goes in comes from the <code>files</code> field in <code>remote/package.json</code>, which is why the tests and config aren't included.</p>
+</section>
+
+<section>
+  <h2>What npm does, and what we changed</h2>
+  <p>When you install a package by name, the registry only helps you find the file. It then hands back a tarball like ours. We skip the lookup and go straight to the download:</p>
+  <div class="flow">
+    <div class="flow-row">
+      <div class="flow-label">Normal install, from the npm registry</div>
+      <div class="flow-steps">
+        <div class="flow-step">You ask for a name and version</div>
+        <div class="flow-step">The registry finds that version's <code>.tgz</code> URL</div>
+        <div class="flow-step">npm downloads the <code>.tgz</code></div>
+        <div class="flow-step">npm unpacks it into <code>node_modules</code></div>
+      </div>
+    </div>
+    <div class="flow-row">
+      <div class="flow-label">Our stopgap, from a GitHub release</div>
+      <div class="flow-steps">
+        <div class="flow-step">You give the <code>.tgz</code> URL directly</div>
+        <div class="flow-step flow-step--skipped">No lookup needed</div>
+        <div class="flow-step">npm downloads the <code>.tgz</code></div>
+        <div class="flow-step">npm unpacks it into <code>node_modules</code></div>
+      </div>
+    </div>
+  </div>
+  <p>You can see the registry's half of this with a real Aiden Lab package. This prints a URL ending in <code>.tgz</code>:</p>
+<pre><code>npm view @aidenlab/juicebox-remote dist.tarball</code></pre>
+  <p>Because the end result is the same, imports don't change. <code>import { attachRemote } from '@aidenlab/spacewalk-remote'</code> resolves through <code>node_modules</code>, and it can't tell where the files came from.</p>
+</section>
+
+<section>
+  <h2>Three ways to point at this package</h2>
+  <p>The only thing that differs is the value in <code>spacewalk/package.json</code>.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Stage</th><th>Value</th><th>Works on a clean machine?</th></tr></thead>
+    <tbody>
+      <tr><td>Before</td><td><code>file:../spacewalk-mcp/remote</code></td><td>No. It links to a sibling folder, so it fails anywhere that folder is missing.</td></tr>
+      <tr><td><strong>Now</strong></td><td>the GitHub release URL, shown below</td><td>Yes. Anyone can download it, with no login or token.</td></tr>
+      <tr><td>Later</td><td><code>"0.1.0"</code></td><td>Yes. This is the normal npm route.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The current line:</p>
+<pre><code>"@aidenlab/spacewalk-remote": "https://github.com/aidenlab/spacewalk-mcp/releases/download/remote-0.1.0/aidenlab-spacewalk-remote-0.1.0.tgz"</code></pre>
+  <p>The version appears twice in that URL: once in the release tag (<code>remote-0.1.0</code>) and once in the file name (<code>…-0.1.0.tgz</code>).</p>
+</section>
+
+<section>
+  <h2>What exists now</h2>
+  <ul>
+    <li><strong>The release:</strong> <a href="https://github.com/aidenlab/spacewalk-mcp/releases/tag/remote-0.1.0"><code>remote-0.1.0</code> on spacewalk-mcp</a>, built from <code>main</code> at <code>c7c9e60</code> and marked as a pre-release.</li>
+    <li><strong>The pin:</strong> commit <code>cbf21e3</code> on the <code>viewer-attaches-to-room</code> branch of <code>spacewalk</code>. It also updates the local testing cheat sheet.</li>
+  </ul>
+  <h3>Checked</h3>
+  <ul>
+    <li>A fresh clone of the pushed branch, with no <code>spacewalk-mcp</code> beside it, installed the package from the release URL.</li>
+    <li>That clone builds, all 146 tests pass, and the source maps show the Room code in the viewer bundle.</li>
+    <li>The file downloads without a login, and its checksum matches the file I uploaded.</li>
+    <li>The npm publish workflow saw the release and skipped it, as intended.</li>
+  </ul>
+  <h3>Not done yet</h3>
+  <ul>
+    <li>The built page hasn't been driven against a live Room with this tarball.</li>
+    <li><code>viewer-attaches-to-room</code> has no pull request open and isn't merged.</li>
+    <li>Your own <code>spacewalk</code> checkout keeps using the old sibling link until you next run <code>npm install</code> there.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Rules while this is in place</h2>
+  <p class="warn"><strong>Never replace an attached tarball.</strong> <code>spacewalk</code> doesn't commit its lockfile, so nothing would notice a swapped file. Two people could install the same URL and get different code.</p>
+  <p class="warn"><strong>Don't start the tag with <code>v</code>.</strong> A <code>v*</code> release triggers <code>publish-remote.yml</code>, which tries to publish to npm. Use <code>remote-0.1.1</code>, not <code>v0.1.1</code>, until npm access is sorted out.</p>
+  <p class="warn"><strong>Remember it's a snapshot.</strong> Merging a change to <code>remote/</code> doesn't reach the viewer. The viewer only sees it after a new release and a new pin. That includes wire protocol changes, so if the server's protocol changes, the viewer needs the new tarball before it deploys.</p>
+</section>
+
+<section>
+  <h2>Common tasks</h2>
+
+  <h3>Look inside a tarball</h3>
+  <p>This lists the contents without unpacking anything:</p>
+<pre><code>tar -tzf aidenlab-spacewalk-remote-0.1.0.tgz</code></pre>
+  <p>To preview what the next tarball would hold without creating it, run this from <code>spacewalk-mcp</code>:</p>
+<pre><code>npm pack --workspace remote --dry-run</code></pre>
+
+  <h3>Try unreleased changes to remote/ locally</h3>
+  <p>Run this from <code>spacewalk</code>. It links your local copy without changing <code>package.json</code>:</p>
+<pre><code>npm install ../spacewalk-mcp/remote --no-save</code></pre>
+  <p>The next plain <code>npm install</code> may put the released tarball back, so rerun this if your local changes seem to disappear.</p>
+
+  <h3>Release a new version</h3>
+  <ol>
+    <li>In <code>spacewalk-mcp</code>, bump the version on a branch, then merge it to <code>main</code> by pull request:
+<pre><code>npm version 0.1.1 --workspace remote --no-git-tag-version</code></pre></li>
+    <li>From an up-to-date, clean <code>main</code>, build the tarball and release it:
+<pre><code>npm pack --workspace remote --pack-destination ~/Desktop
+
+gh release create remote-0.1.1 \
+  ~/Desktop/aidenlab-spacewalk-remote-0.1.1.tgz \
+  --repo aidenlab/spacewalk-mcp --target main --prerelease \
+  --title "spacewalk-remote 0.1.1 (stopgap tarball)" \
+  --notes "Stopgap until the package is on npm."</code></pre></li>
+    <li>In <code>spacewalk/package.json</code>, change the version in both places in the URL, then run <code>npm install</code> and commit.</li>
+  </ol>
+
+  <h3>Switch to npm when access arrives</h3>
+  <ol>
+    <li>Get publish rights for the <code>@aidenlab</code> scope and set up the trusted publisher, as your <code>spacewalk-npm-todo.txt</code> note describes. The first publish may have to be done by hand.</li>
+    <li>Publish a release tagged <code>v</code> plus the current version in <code>remote/package.json</code>, such as <code>v0.1.0</code>. The workflow fails if the two don't match.</li>
+    <li>In <code>spacewalk/package.json</code>, replace the URL with the plain version:
+<pre><code>"@aidenlab/spacewalk-remote": "0.1.0"</code></pre></li>
+    <li>Run <code>npm install</code>, confirm the build, and commit.</li>
+  </ol>
+  <p>You can leave the stopgap release in place afterward. Older <code>spacewalk</code> commits pin its URL, so deleting it stops them from installing.</p>
+</section>
+
+</main>
+</body>
+</html>
