@@ -106,6 +106,15 @@ export type RadiusDirection = z.infer<typeof RadiusDirection>
 export const BackgroundDirection = z.enum(['lighter', 'darker'])
 export type BackgroundDirection = z.infer<typeof BackgroundDirection>
 
+/** Some of the viewer settings, each section whole or in part. */
+export const ViewerSettingsPatch = z.object({
+  background: Color.optional(),
+  gnomon: SceneFixture.partial().optional(),
+  groundPlane: SceneFixture.partial().optional(),
+  referenceRuler: SceneFixture.partial().optional(),
+})
+export type ViewerSettingsPatch = z.infer<typeof ViewerSettingsPatch>
+
 /**
  * A proposal: a change to the viewer state offered by a Viewer or a tool call. Only the Room
  * applies one. Relative steps (`step-*`, `adjust-background`) name a direction, and the Room
@@ -122,18 +131,20 @@ export const Proposal = z.discriminatedUnion('type', [
     type: z.literal('set-structure-appearance'),
     patch: StructureAppearance.partial(),
   }),
-  z.object({
-    type: z.literal('set-viewer-settings'),
-    patch: z.object({
-      background: Color.optional(),
-      gnomon: SceneFixture.partial().optional(),
-      groundPlane: SceneFixture.partial().optional(),
-      referenceRuler: SceneFixture.partial().optional(),
-    }),
-  }),
+  z.object({ type: z.literal('set-viewer-settings'), patch: ViewerSettingsPatch }),
   z.object({ type: z.literal('adjust-background'), direction: BackgroundDirection }),
   z.object({ type: z.literal('set-camera'), camera: Camera }),
   z.object({ type: z.literal('reset-camera') }),
+  // A session, whole: one proposal, so that a Viewer draws it once. Viewer settings are only those
+  // the session carries, beside it (ADR 0002).
+  z.object({
+    type: z.literal('load-session'),
+    ensemble: Ensemble.omit({ kind: true }),
+    renderStyle: RenderStyle,
+    structureAppearance: StructureAppearance,
+    viewerSettings: ViewerSettingsPatch,
+    camera: Camera.nullable(),
+  }),
 ])
 export type Proposal = z.infer<typeof Proposal>
 

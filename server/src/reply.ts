@@ -3,7 +3,13 @@
  * change came out, the changes it did not cause, how many Viewers are connected, and the full
  * viewer state. Pure: the Room keeps all of it, and this only says it.
  */
-import type { Color, Proposal, SceneFixture, StructureAppearance } from '@aidenlab/spacewalk-remote/protocol'
+import type {
+  Color,
+  Proposal,
+  SceneFixture,
+  StructureAppearance,
+  ViewerState,
+} from '@aidenlab/spacewalk-remote/protocol'
 import type { Look, News, Realized, Settled } from './room.ts'
 import { toSrgb } from './viewerState.ts'
 
@@ -27,7 +33,22 @@ export function lookReply({ version, state, viewers, realized, news }: Look): st
   ]
   // How a change the reply gave up on came out, once a Viewer caught up.
   if (realized) lines.push(`A Viewer has realized up to version ${realized.version}, ${phraseResult(realized)}.`)
-  return `${lines.join('\n')}\n\nViewer state (version ${version}):\n${JSON.stringify(state, null, 2)}`
+  return `${lines.join('\n')}\n\nViewer state (version ${version}):\n${JSON.stringify(asTold(state), null, 2)}`
+}
+
+/** The viewer state as the model reads it: its colors in hex, as they show, not linear components. */
+function asTold(state: ViewerState) {
+  const { background, gnomon, groundPlane, referenceRuler } = state.viewerSettings
+  const fixture = ({ visible, ...color }: SceneFixture) => ({ visible, color: hex(color) })
+  return {
+    ...state,
+    viewerSettings: {
+      background: hex(background),
+      gnomon: fixture(gnomon),
+      groundPlane: fixture(groundPlane),
+      referenceRuler: fixture(referenceRuler),
+    },
+  }
 }
 
 function phraseResult({ result }: Realized): string {
@@ -125,6 +146,8 @@ function phraseProposal(proposal: Proposal): string[] {
       return [CAMERA_MOVED]
     case 'reset-camera':
       return ['reset the camera']
+    case 'load-session':
+      return [`loaded a session of the ensemble ${proposal.ensemble.url}`]
   }
 }
 

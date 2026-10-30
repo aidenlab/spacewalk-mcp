@@ -171,7 +171,8 @@ export class Room extends DurableObject<Env> {
     const result = apply(current.state, parsed.data)
     if (!result.ok) return { ok: false, reason: 'refused', message: result.refusal }
     const version = current.version + 1
-    const loadedAt = parsed.data.type === 'load-ensemble' ? version : current.loadedAt
+    const loads = parsed.data.type === 'load-ensemble' || parsed.data.type === 'load-session'
+    const loadedAt = loads ? version : current.loadedAt
     const next: Current = { version, state: result.state, loadedAt }
     await this.ctx.storage.put(CURRENT, next)
     if (byHand) await this.tell({ type: 'hand', version, proposal: parsed.data })

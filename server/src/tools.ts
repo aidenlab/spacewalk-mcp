@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import type { Proposal } from '@aidenlab/spacewalk-remote/protocol'
 import { z } from 'zod'
 import { COMMAND_TOOLS, ENSEMBLE_POINTER, type CommandTool } from './commandTools.ts'
 import { exampleEnsembles, exampleListReply, type ExampleEnsembles } from './exampleEnsembles.ts'
@@ -13,6 +14,7 @@ import {
 import { changeReply, lookReply } from './reply.ts'
 import type { Refusal, Room } from './room.ts'
 import { mintRoomId, parseRoomId } from './roomId.ts'
+import { readSession, shorten, snapshotUrl, type Fetch } from './session.ts'
 
 export interface ToolDeps {
   /** The Viewer's address; a Room link is this URL carrying `?room=`. */
@@ -29,6 +31,8 @@ export interface ToolDeps {
   realizeTimeoutMs?: number
   /** The example ensembles; R2's list, kept a few minutes, unless a test gives its own. */
   exampleEnsembles?: ExampleEnsembles
+  /** The network, for shortening a URL and following a short one; the Worker's unless a test says. */
+  fetch?: Fetch
 }
 
 /** How long a change waits for the first Viewer to report it realized. */
@@ -88,6 +92,15 @@ function refusalReply(roomId: string, { reason, message }: Refusal) {
   }
 }
 
+/** The Room a tool acts on: the one the model named, or the Host's own; or an error reply. */
+function roomToActOn(room: string | undefined, hostRoomId: string | null) {
+  const given = givenRoomId(room)
+  if (given !== null && typeof given === 'object') return given
+  const roomId = given ?? hostRoomId
+  if (roomId === null) return { refusal: errorReply('Pass room: the Room id from the reply of open_viewer.') }
+  return { roomId }
+}
+
 function roomLinkFor(viewerUrl: string, roomId: string): string {
   const roomLink = new URL(viewerUrl)
   roomLink.searchParams.set('room', roomId)
@@ -95,8 +108,8 @@ function roomLinkFor(viewerUrl: string, roomId: string): string {
 }
 
 /**
- * Register the Join card, `open_viewer`, `list_example_ensembles`, and a tool for each row of
- * `commandTools`.
+ * Register the Join card, `open_viewer`, the tools that only read, `load_session`, and a tool for
+ * each row of `commandTools`.
  */
 export function registerTools(
   mcpServer: McpServer,
@@ -106,6 +119,7 @@ export function registerTools(
     hostRoomId,
     realizeTimeoutMs = REALIZE_TIMEOUT_MS,
     exampleEnsembles: examples = EXAMPLE_ENSEMBLES,
+    fetch = (url, init) => globalThis.fetch(url, init),
   }: ToolDeps,
   commandTools: CommandTool[] = COMMAND_TOOLS,
 ): void {
@@ -190,8 +204,92 @@ export function registerTools(
     },
   )
 
-  // Every command tool is the same round trip: one proposal to the Room, a wait for a Viewer to
-  // realize it, and a look at the Room; or why it refused, which becomes the reply.
+  // Not a change: the Room as it is, and an error only when there is no Room to read.
+  mcpServer.registerTool(
+    'read_viewer_state',
+    {
+      title: 'Read the viewer state',
+      description:
+        'Read what Spacewalk shows now, without changing it: the viewer state, how many Viewers are connected, and what changed since your last reply that you did not cause. An error only when the Room is unknown or expired.',
+      inputSchema: { room: ROOM_ARGUMENT },
+    },
+    async ({ room }) => {
+      const acting = roomToActOn(room, hostRoomId)
+      if ('refusal' in acting) return acting.refusal
+      const look = await roomById(acting.roomId).look()
+      if (!look.ok) return refusalReply(acting.roomId, look)
+      return { content: [{ type: 'text' as const, text: lookReply(look) }] }
+    },
+  )
+
+  // Not a change: a Room-free snapshot of what the Room shows now.
+  mcpServer.registerTool(
+    'get_shareable_url',
+    {
+      title: 'Get a shareable URL',
+      description:
+        'Get a URL that opens a frozen snapshot of what Spacewalk shows now: the ensemble, its place, the structure appearance, the viewer settings and the camera. It has no Room: whoever opens it sees that snapshot and later changes do not reach it. To bring someone into the Room itself, give them the Room link instead.',
+      inputSchema: { room: ROOM_ARGUMENT },
+    },
+    async ({ room }) => {
+      const acting = roomToActOn(room, hostRoomId)
+      if ('refusal' in acting) return acting.refusal
+      const look = await roomById(acting.roomId).look()
+      if (!look.ok) return refusalReply(acting.roomId, look)
+      if (!look.state.ensemble) {
+        return errorReply(`No ensemble is loaded, so there is nothing to share.\n${lookReply(look)}`)
+      }
+      const url = await shorten(await snapshotUrl(viewerUrl, look.state), fetch)
+      console.log(`[mcp] get_shareable_url | Room ${acting.roomId}`)
+      return { content: [{ type: 'text' as const, text: `Shareable URL:\n${url}\n\n${lookReply(look)}` }] }
+    },
+  )
+
+  /**
+   * The round trip of a change: one proposal to the Room, a wait for a Viewer to realize it, and a
+   * look at the Room; or why it refused, which becomes the reply. `told` goes before the outcome.
+   */
+  const change = async (name: string, roomId: string, proposal: Proposal, told: string[] = []) => {
+    const stub = roomById(roomId)
+    const result = await stub.propose(proposal)
+    console.log(`[mcp] ${name} | Room ${roomId} | ${result.ok ? `version ${result.version}` : result.reason}`)
+    if (!result.ok) return refusedReply(roomId, result)
+    const settled = await stub.settle(result.version, realizeTimeoutMs)
+    const look = await stub.look()
+    if (!look.ok) return refusalReply(roomId, look)
+    const text = [...told, changeReply(result.version, settled, look)].join('\n')
+    return { content: [{ type: 'text' as const, text }] }
+  }
+
+  /** Why a change did not happen; in a live Room, the model still sees what it holds and what changed. */
+  const refusedReply = async (roomId: string, refusal: Refusal) => {
+    if (refusal.reason === 'refused') {
+      const look = await roomById(roomId).look()
+      if (look.ok) return errorReply(`${refusal.message}\n${lookReply(look)}`)
+    }
+    return refusalReply(roomId, refusal)
+  }
+
+  mcpServer.registerTool(
+    'load_session',
+    {
+      title: 'Load a session',
+      description:
+        'Load a Spacewalk session into the Room: what it shows, from a shareable URL of the full Spacewalk app or of this viewer, or from a bare session string. Only the Spacewalk part is read; the reply says what was ignored, such as IGV tracks and the Hi-C map. A URL that merely points at a session file to fetch is refused. To load a .sw file, use load_ensemble.',
+      inputSchema: {
+        session: z.string().min(1).describe('A shareable URL, or a session string (blob:…).'),
+        room: ROOM_ARGUMENT,
+      },
+    },
+    async ({ session, room }) => {
+      const acting = roomToActOn(room, hostRoomId)
+      if ('refusal' in acting) return acting.refusal
+      const read = await readSession(session, fetch)
+      if (!read.ok) return refusedReply(acting.roomId, { ok: false, reason: 'refused', message: read.message })
+      return change('load_session', acting.roomId, read.proposal, read.notes)
+    },
+  )
+
   for (const tool of commandTools) {
     mcpServer.registerTool(
       tool.name,
@@ -201,25 +299,9 @@ export function registerTools(
         inputSchema: { ...tool.inputSchema, room: ROOM_ARGUMENT },
       },
       async ({ room, ...args }: { room?: string } & Record<string, unknown>) => {
-        const given = givenRoomId(room)
-        if (given !== null && typeof given === 'object') return given.refusal
-        const roomId = given ?? hostRoomId
-        if (roomId === null) {
-          return errorReply('Pass room: the Room id from the reply of open_viewer.')
-        }
-        const stub = roomById(roomId)
-        const result = await stub.propose(tool.proposal(args))
-        console.log(`[mcp] ${tool.name} | Room ${roomId} | ${result.ok ? `version ${result.version}` : result.reason}`)
-        if (!result.ok && result.reason === 'refused') {
-          // The Room is live: the model still sees what it holds, and what changed.
-          const look = await stub.look()
-          if (look.ok) return errorReply(`${result.message}\n${lookReply(look)}`)
-        }
-        if (!result.ok) return refusalReply(roomId, result)
-        const settled = await stub.settle(result.version, realizeTimeoutMs)
-        const look = await stub.look()
-        if (!look.ok) return refusalReply(roomId, look)
-        return { content: [{ type: 'text' as const, text: changeReply(result.version, settled, look) }] }
+        const acting = roomToActOn(room, hostRoomId)
+        if ('refusal' in acting) return acting.refusal
+        return change(tool.name, acting.roomId, tool.proposal(args))
       },
     )
   }
