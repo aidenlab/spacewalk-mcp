@@ -53,6 +53,8 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
       return applied({
         ...state,
         ensemble: { url: proposal.url, groupKey: null, traceKey: null, kind: null },
+        // The pose was chosen for the structure being replaced.
+        camera: null,
       })
     case 'select-ensemble-group':
       if (!ensemble) return refused(NO_ENSEMBLE)

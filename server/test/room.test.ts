@@ -166,6 +166,16 @@ describe('a proposal', () => {
     })
   })
 
+  it('loading another ensemble drops the camera, for the Viewer to frame the new structure', async () => {
+    const room = freshRoom()
+    await room.open()
+    await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
+    const camera = { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 } }
+    await room.propose({ type: 'set-camera', camera })
+    const result = await room.propose({ type: 'load-ensemble', url: 'https://example.com/b.sw' })
+    expect(result).toMatchObject({ state: { camera: null } })
+  })
+
   it('choosing a group goes to its default trace', async () => {
     const room = freshRoom()
     await room.open()
