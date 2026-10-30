@@ -23,8 +23,8 @@ export type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 /** The full app's shortener (spacewalk `workers/sw-shortlink`). */
 const SHORTENER_URL = 'https://spacewalk.aidenlab.org/shorten'
 
-/** How long a shortener gets before the long URL is good enough. */
-const SHORTEN_TIMEOUT_MS = 5000
+/** How long a shortener, or a short URL, gets to answer. */
+const NETWORK_TIMEOUT_MS = 5000
 
 /** The hosts of the short URLs the full app has given out. */
 const SHORT_LINK_HOSTS = ['t.3dg.io', 'tinyurl.com']
@@ -88,8 +88,8 @@ export async function snapshotUrl(viewerUrl: string, state: ViewerState): Promis
 
 /**
  * The `spacewalk` block of a viewer state. The Room has no locus and no panels: only the full app
- * reads those, and a snapshot opens on the viewer page. A camera has no projection either, which
- * Spacewalk derives from the ensemble as it frames it.
+ * reads those, and a snapshot opens on the viewer page. Nor has it a camera projection: Spacewalk
+ * keeps the one it framed the ensemble with, and warns that it could not read the camera's.
  */
 function sessionBlock({ ensemble, renderStyle, structureAppearance, camera }: ViewerState) {
   return {
@@ -119,7 +119,7 @@ export async function shorten(url: string, fetch: Fetch): Promise<string> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: new URL(url).origin },
       body: JSON.stringify({ url }),
-      signal: AbortSignal.timeout(SHORTEN_TIMEOUT_MS),
+      signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const short = ((await response.json()) as { data?: { tiny_url?: unknown } }).data?.tiny_url
@@ -146,7 +146,7 @@ const NO_SESSION =
  */
 export async function readSession(given: string, fetch: Fetch): Promise<ReadSession> {
   const text = given.trim()
-  if (!/^https?:\/\//i.test(text)) {
+  if (!isWebUrl(text)) {
     if (!/^(blob|data):/.test(text)) {
       return { ok: false, message: 'That is neither a shareable URL nor a session string.' }
     }
@@ -157,7 +157,8 @@ export async function readSession(given: string, fetch: Fetch): Promise<ReadSess
     return { ok: false, message: `Could not follow the short URL ${text}. Ask the user for the long URL.` }
   }
   const parameters = launchParameters(followed)
-  const session = parameters.get('spacewalkSessionURL')
+  // As in the full app, a file wins over any session.
+  const session = parameters.has('file') ? undefined : parameters.get('spacewalkSessionURL')
   if (!session) return { ok: false, message: NO_SESSION }
   return readParts({
     session,
@@ -165,6 +166,10 @@ export async function readSession(given: string, fetch: Fetch): Promise<ReadSess
     hasIgv: parameters.has('sessionURL'),
     hasHicMap: parameters.has('session'),
   })
+}
+
+function isWebUrl(text: string): boolean {
+  return /^https?:\/\//i.test(text)
 }
 
 function isShortLink(url: string): boolean {
@@ -179,7 +184,7 @@ function isShortLink(url: string): boolean {
 /** Where a short URL leads, from its redirect, without going there; null when it does not say. */
 async function followShortLink(url: string, fetch: Fetch): Promise<string | null> {
   try {
-    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(SHORTEN_TIMEOUT_MS) })
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS) })
     return response.status >= 300 && response.status < 400 ? response.headers.get('Location') : null
   } catch (error) {
     console.warn('[mcp] following a short URL failed:', error)
@@ -214,7 +219,7 @@ interface SessionParts {
 }
 
 async function readParts({ session, settings, hasIgv, hasHicMap }: SessionParts): Promise<ReadSession> {
-  if (/^https?:\/\//i.test(session)) {
+  if (isWebUrl(session)) {
     return { ok: false, message: `Spacewalk does not fetch a session from a URL: ${session}. Ask the user for a shareable URL or a session string.` }
   }
   let json: unknown
@@ -297,7 +302,7 @@ function readStructureAppearance(record: Record<string, unknown>): StructureAppe
 }
 
 /** A block's camera, from Spacewalk's spelling; null, for the Viewer to frame, when it is malformed. */
-function readCamera(value: unknown): z.infer<typeof Camera> | null {
+function readCamera(value: unknown): Camera | null {
   const { position, target } = asRecord(value)
   const { tx, ty, tz } = asRecord(target)
   const camera = Camera.safeParse({ position, target: { x: tx, y: ty, z: tz } })
@@ -305,8 +310,9 @@ function readCamera(value: unknown): z.infer<typeof Camera> | null {
 }
 
 /**
- * The viewer settings beside a session, section by section: one missing or malformed is left as the
- * Room has it. None at all, or none readable, is not a reason to refuse the session, but is told.
+ * The viewer settings beside a session, whole, as the viewer page reads them: a section missing or
+ * malformed is its default. None at all, or none readable, is not a reason to refuse the session:
+ * the Room's stay, and the model is told.
  */
 async function readViewerSettings(settings: string | undefined): Promise<{ patch: ViewerSettingsPatch; note: string | null }> {
   if (!settings) return { patch: {}, note: 'This session carries no viewer settings, so they stay as they were.' }
@@ -317,12 +323,19 @@ async function readViewerSettings(settings: string | undefined): Promise<{ patch
     console.warn('[mcp] reading viewer settings failed:', error)
     return { patch: {}, note: 'The viewer settings in this session could not be read, so they stay as they were.' }
   }
-  const patch: ViewerSettingsPatch = {}
-  const background = Color.safeParse(record.background)
-  if (background.success) patch.background = background.data
-  for (const key of ['gnomon', 'groundPlane', 'referenceRuler'] as const) {
-    const fixture = SceneFixture.safeParse(record[key])
-    if (fixture.success) patch[key] = fixture.data
+  const defaults = emptyViewerState().viewerSettings
+  const fixture = (key: 'gnomon' | 'groundPlane' | 'referenceRuler') => {
+    const read = SceneFixture.safeParse(record[key])
+    return read.success ? read.data : defaults[key]
   }
-  return { patch, note: null }
+  const background = Color.safeParse(record.background)
+  return {
+    patch: {
+      background: background.success ? background.data : defaults.background,
+      gnomon: fixture('gnomon'),
+      groundPlane: fixture('groundPlane'),
+      referenceRuler: fixture('referenceRuler'),
+    },
+    note: null,
+  }
 }

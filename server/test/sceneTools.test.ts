@@ -7,11 +7,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { describe, expect, it } from 'vitest'
-import { readSessionString, writeSessionString } from '../src/session.ts'
+import { readSessionString, writeSessionString, type Fetch } from '../src/session.ts'
 import { registerTools } from '../src/tools.ts'
 import type { ToolResult } from './mcp.ts'
-
-type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 
 /** The network the tools see; a tool that reaches for it without a test saying so fails. */
 const noNetwork: Fetch = async (url) => {
@@ -444,16 +442,19 @@ describe('load_session', () => {
     })
   })
 
-  it('takes viewer settings section by section, keeping those it cannot read', async () => {
+  it('takes viewer settings as the viewer page does: a section missing or malformed is its default', async () => {
     const room = await openRoom()
+    const fixtures = { gnomon: { visible: true }, groundPlane: { visible: true } }
+    await env.ROOM.getByName(room).propose({ type: 'set-viewer-settings', patch: fixtures })
     const settings = await writeSessionString({ background: { r: 0, g: 0, b: 0 }, gnomon: { visible: 'yes', r: 1, g: 1, b: 1 } })
     const session = `${VIEWER}?spacewalkSessionURL=${BLOCK_FROM_SPACEWALK}&viewerSettings=${settings}`
 
     text(await call('load_session', { room, session }))
 
-    const { background, gnomon } = (await stateOf(room)).viewerSettings
+    const { background, gnomon, groundPlane } = (await stateOf(room)).viewerSettings
     expect(background).toEqual({ r: 0, g: 0, b: 0 })
     expect(gnomon.visible).toBe(false)
+    expect(groundPlane.visible).toBe(false)
   })
 
   it('loads the session even when its viewer settings cannot be read, and says so', async () => {
@@ -528,6 +529,7 @@ describe('load_session', () => {
     ['a session URL meant to be fetched, bare', 'https://example.org/s.json', /^Error: That URL carries no Spacewalk session/],
     ['a URL with only an IGV session', `${FULL_APP}?sessionURL=${IGV_FROM_SPACEWALK}`, /^Error: That URL carries no Spacewalk session/],
     ['a launch URL with a file', `${FULL_APP}?file=https://example.org/a.sw`, /load_ensemble/],
+    ['a launch URL with a file beside a session, where the file wins', `${FULL_APP}?file=https://example.org/a.sw&spacewalkSessionURL=${BLOCK_FROM_SPACEWALK}`, /load_ensemble/],
     ['a string that is no session', 'hello', /^Error: That is neither a shareable URL nor a session string/],
     ['a session string that cannot be read', 'blob:nonsense', /^Error: That session string could not be read/],
   ])('refuses %s, leaving the Room alone', async (_, session, message) => {
