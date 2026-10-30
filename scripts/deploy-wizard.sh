@@ -185,7 +185,7 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 # Deploys the dev stack and walks the maintainer through the steps only a person
-# can do: Cloudflare login, the Pages custom domain, connecting each Host and
+# can do: Cloudflare login, connecting each Host and
 # checking the milestone there (issue #12). Run from anywhere:
 #   scripts/deploy-wizard.sh
 # Every stage checks its own outcome and can be run again; on a re-run, answer no
@@ -195,7 +195,7 @@ finish() {
 #
 # SPACEWALK_DIR names the spacewalk checkout, if it is not next to this one.
 
-TOTAL_STAGES=13
+TOTAL_STAGES=12
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_DIR="$REPO_ROOT/server"
@@ -206,10 +206,9 @@ WORKER_NAME="spacewalk-mcp-dev"
 BASE_URL="https://spacewalk-mcp-dev.3dg.io"
 MCP_URL="$BASE_URL/mcp"
 PAGES_PROJECT="spacewalk-viewer-dev"
-VIEWER_HOST="spacewalk-viewer-dev.3dg.io"
+VIEWER_HOST="$PAGES_PROJECT.pages.dev"
 # The Viewer page: VIEWER_URL in server/wrangler.toml [env.dev].
 VIEWER_URL="https://$VIEWER_HOST/viewer.html"
-PAGES_VIEWER_URL="https://$PAGES_PROJECT.pages.dev/viewer.html"
 EXAMPLE_ENSEMBLE="https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/A549_chr21-28-30Mb.sw"
 RESULTS_FILE="${RESULTS_FILE:-${TMPDIR:-/tmp}/spacewalk-deploy-results.md}"
 RESULTS=()
@@ -389,7 +388,6 @@ else
 fi
 expect "/ws refuses an unlisted Origin" 403 "$(ws_code https://example.com)"
 expect "/ws accepts https://$VIEWER_HOST" 101 "$(ws_code "https://$VIEWER_HOST")"
-expect "/ws accepts https://$PAGES_PROJECT.pages.dev" 101 "$(ws_code "https://$PAGES_PROJECT.pages.dev")"
 pause
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -431,24 +429,7 @@ if confirm "Build and upload now?"; then
 else
   note "Not uploading; checking what is there."
 fi
-expect "The Viewer page answers on $PAGES_PROJECT.pages.dev" 200 "$(page_code "$PAGES_VIEWER_URL")"
-pause
-
-# ──────────────────────────────────────────────────────────────────────────
-stage "Custom domain: $VIEWER_HOST"
-say "Room links point at $VIEWER_URL, so the Pages project needs that hostname."
-code=$(page_code "$VIEWER_URL")
-if [[ "$code" == 200 ]]; then
-  note "$VIEWER_URL already answers; nothing to do."
-else
-  open_url "https://dash.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/workers-and-pages"
-  step "Workers & Pages → $PAGES_PROJECT → Custom domains → Set up a custom domain."
-  step "Enter $VIEWER_HOST and confirm; Cloudflare adds the DNS record because the zone is on this account."
-  note "The dashboard's wording may differ slightly; the aim is $VIEWER_HOST listed as Active."
-  pause "Press Enter once the domain shows as Active (it can take a few minutes)"
-  code=$(page_code "$VIEWER_URL")
-fi
-expect "The Viewer page answers on $VIEWER_HOST" 200 "$code"
+expect "The Viewer page answers on $VIEWER_HOST" 200 "$(page_code "$VIEWER_URL")"
 pause
 
 # ──────────────────────────────────────────────────────────────────────────

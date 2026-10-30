@@ -29,10 +29,10 @@ new_sqlite_classes = ["Room"]
 
 # The dev deployment: Worker spacewalk-mcp-dev at https://spacewalk-mcp-dev.3dg.io (Hosts use /mcp,
 # Viewers /ws), paired with the Pages project spacewalk-viewer-dev at
-# https://spacewalk-viewer-dev.3dg.io. Wrangler creates the DNS record for the custom domain. No
-# *.workers.dev hostname and no preview URLs, so there is one public address. Named environments do
-# not inherit `vars` or `durable_objects`, so those are repeated; migrations are top-level and apply
-# to every environment.
+# https://spacewalk-viewer-dev.pages.dev. Wrangler creates the DNS record for the Worker's custom
+# domain. No *.workers.dev hostname and no preview URLs, so the Worker has one public address. Named
+# environments do not inherit `vars` or `durable_objects`, so those are repeated; migrations are
+# top-level and apply to every environment.
 [env.dev]
 name = "spacewalk-mcp-dev"
 routes = [
@@ -50,5 +50,5 @@ class_name = "Room"
 
 [env.dev.vars]
 # The Viewer page, not the full app at /: the full app ignores ?room=.
-VIEWER_URL = "https://spacewalk-viewer-dev.3dg.io/viewer.html"
-VIEWER_ORIGINS = "https://spacewalk-viewer-dev.3dg.io, https://spacewalk-viewer-dev.pages.dev"
+VIEWER_URL = "https://spacewalk-viewer-dev.pages.dev/viewer.html"
+VIEWER_ORIGINS = "https://spacewalk-viewer-dev.pages.dev"
