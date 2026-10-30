@@ -1,5 +1,11 @@
 import { z, type ZodRawShape } from 'zod'
-import { RadiusDirection, type Proposal, type RenderStyle } from '@aidenlab/spacewalk-remote/protocol'
+import {
+  BackgroundDirection,
+  RadiusDirection,
+  type Proposal,
+  type RenderStyle,
+} from '@aidenlab/spacewalk-remote/protocol'
+import { APPLE_CRAYON_NAMES, colorFromName } from './colors.ts'
 
 /**
  * A tool whose whole job is one proposal to the Room. It is registered with a `room` argument
@@ -32,7 +38,7 @@ const RADIUS_DIRECTION = RadiusDirection.describe('up for one radius step bigger
 
 /**
  * The command tools, one row each. Adding one is adding a row here; the Room already applies
- * every proposal the protocol has. The scene tools arrive as rows.
+ * every proposal the protocol has.
  */
 export const COMMAND_TOOLS: CommandTool[] = [
   {
@@ -76,5 +82,31 @@ export const COMMAND_TOOLS: CommandTool[] = [
       'Make the sticks of the ball-and-stick render style one radius step thicker (up) or thinner (down). The stick radius is a rung 0–10 on Spacewalk\'s radius ladder, stickRadiusIndex in the viewer state; a step past either end stays there.',
     inputSchema: { direction: RADIUS_DIRECTION },
     proposal: ({ direction }) => ({ type: 'step-stick-radius', direction: direction as RadiusDirection }),
+  },
+  {
+    name: 'reset_camera',
+    title: 'Reset the camera',
+    description: 'Put the camera back where Spacewalk frames the whole 3D structure.',
+    inputSchema: {},
+    proposal: () => ({ type: 'reset-camera' }),
+  },
+  {
+    name: 'set_background_color',
+    title: 'Set the background color',
+    description: `Set the color behind the 3D structure, by Apple crayon name or hex (#rrggbb). The crayons: ${APPLE_CRAYON_NAMES.join(', ')}.`,
+    inputSchema: {
+      color: z
+        .string()
+        .refine((color) => colorFromName(color) !== null, 'Give an Apple crayon name or a hex color such as #808080.')
+        .describe('An Apple crayon name, or a hex color.'),
+    },
+    proposal: ({ color }) => ({ type: 'set-viewer-settings', patch: { background: colorFromName(color as string)! } }),
+  },
+  {
+    name: 'adjust_background',
+    title: 'Make the background lighter or darker',
+    description: 'Make the color behind the 3D structure one step lighter or darker, keeping its hue. A step past white or black stays there.',
+    inputSchema: { direction: BackgroundDirection.describe('lighter or darker.') },
+    proposal: ({ direction }) => ({ type: 'adjust-background', direction: direction as BackgroundDirection }),
   },
 ]

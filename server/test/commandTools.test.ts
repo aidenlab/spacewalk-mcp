@@ -8,6 +8,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
+import type { ViewerState } from '@aidenlab/spacewalk-remote/protocol'
 import type { CommandTool } from '../src/commandTools.ts'
 import { registerTools } from '../src/tools.ts'
 import type { ToolResult } from './mcp.ts'
@@ -180,8 +181,9 @@ describe('the reply to a command tool', () => {
     const room = await openRoom()
     const reply = text(await call('set_render_style', { room, style: 'ribbon' }))
     const state = JSON.parse(reply.slice(reply.indexOf('{')))
-    expect(state).toEqual((await env.ROOM.getByName(room).read() as { state: object }).state)
-    expect(state).toMatchObject({ renderStyle: 'ribbon' })
+    const { viewerSettings: _, ...rest } = (await env.ROOM.getByName(room).read() as { state: ViewerState }).state
+    expect(state).toMatchObject(rest)
+    expect(state).toMatchObject({ renderStyle: 'ribbon', viewerSettings: { background: '#ffffff' } })
   })
 
   it('says the change was drawn once the first Viewer reports it drawn', async () => {

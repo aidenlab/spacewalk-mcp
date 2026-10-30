@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Proposal } from '@aidenlab/spacewalk-remote/protocol'
 import { phraseNews } from '../src/reply.ts'
 import type { News } from '../src/room.ts'
+import { emptyViewerState } from '../src/viewerState.ts'
 
 function byHand(...proposals: Proposal[]): News[] {
   return proposals.map((proposal, i) => ({ type: 'hand', version: i + 1, proposal }))
@@ -45,6 +46,17 @@ describe('the changes the model did not cause', () => {
     [{ type: 'step-stick-radius', direction: 'down' }, 'made the sticks thinner'],
     [{ type: 'adjust-background', direction: 'darker' }, 'made the background darker'],
     [{ type: 'reset-camera' }, 'reset the camera'],
+    [
+      {
+        type: 'load-session',
+        ensemble: { url: 'https://example.com/a.sw', groupKey: null, traceKey: null },
+        renderStyle: 'ribbon',
+        structureAppearance: emptyViewerState().structureAppearance,
+        viewerSettings: {},
+        camera: null,
+      },
+      'loaded a session of the ensemble https://example.com/a.sw',
+    ],
     [
       { type: 'set-structure-appearance', patch: { sticksVisible: false, ballRadiusIndex: 3 } },
       'hid the sticks; set the ball radius to step 3',

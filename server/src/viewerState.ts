@@ -9,6 +9,8 @@ import {
   type EnsembleKind,
   type Proposal,
   type RadiusDirection,
+  type ViewerSettings,
+  type ViewerSettingsPatch,
   type ViewerState,
 } from '@aidenlab/spacewalk-remote/protocol'
 
@@ -79,19 +81,8 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
         ...state,
         structureAppearance: { ...state.structureAppearance, ...proposal.patch },
       })
-    case 'set-viewer-settings': {
-      const settings = state.viewerSettings
-      const patch = proposal.patch
-      return applied({
-        ...state,
-        viewerSettings: {
-          background: patch.background ?? settings.background,
-          gnomon: { ...settings.gnomon, ...patch.gnomon },
-          groundPlane: { ...settings.groundPlane, ...patch.groundPlane },
-          referenceRuler: { ...settings.referenceRuler, ...patch.referenceRuler },
-        },
-      })
-    }
+    case 'set-viewer-settings':
+      return applied({ ...state, viewerSettings: patched(state.viewerSettings, proposal.patch) })
     case 'adjust-background': {
       const settings = state.viewerSettings
       const background = stepLightness(settings.background, proposal.direction)
@@ -101,6 +92,24 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
       return applied({ ...state, camera: proposal.camera })
     case 'reset-camera':
       return applied({ ...state, camera: null })
+    case 'load-session':
+      return applied({
+        ensemble: { ...proposal.ensemble, kind: null },
+        renderStyle: proposal.renderStyle,
+        structureAppearance: proposal.structureAppearance,
+        viewerSettings: patched(state.viewerSettings, proposal.viewerSettings),
+        camera: proposal.camera,
+      })
+  }
+}
+
+/** Viewer settings with some of them changed. */
+function patched(settings: ViewerSettings, patch: ViewerSettingsPatch): ViewerSettings {
+  return {
+    background: patch.background ?? settings.background,
+    gnomon: { ...settings.gnomon, ...patch.gnomon },
+    groundPlane: { ...settings.groundPlane, ...patch.groundPlane },
+    referenceRuler: { ...settings.referenceRuler, ...patch.referenceRuler },
   }
 }
 
@@ -135,7 +144,7 @@ export function toSrgb(c: number): number {
   return c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055
 }
 
-function toLinear(c: number): number {
+export function toLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
 }
 
