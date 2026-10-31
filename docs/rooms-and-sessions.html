@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rooms and Sessions</title>
+<style>
+/* Layout idea: one reading column, with teal always meaning live (the Room) and amber always meaning at rest (the session). */
+:root {
+  --ink: #1c2630;
+  --muted: #566472;
+  --paper: #f8fafb;
+  --panel: #e9eff2;
+  --line: #c6d1d8;
+  --live: #0a6c76;
+  --live-wash: #d6edef;
+  --rest: #92590a;
+  --rest-wash: #f7e9d0;
+  --missing: #a23b32;
+  --missing-wash: #f7dfdb;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #e4eaef;
+    --muted: #9dabb7;
+    --paper: #141b22;
+    --panel: #1f2932;
+    --line: #3a4955;
+    --live: #62c7d1;
+    --live-wash: #173a40;
+    --rest: #e6b566;
+    --rest-wash: #3d2f17;
+    --missing: #f09a90;
+    --missing-wash: #44231f;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #e4eaef;
+  --muted: #9dabb7;
+  --paper: #141b22;
+  --panel: #1f2932;
+  --line: #3a4955;
+  --live: #62c7d1;
+  --live-wash: #173a40;
+  --rest: #e6b566;
+  --rest-wash: #3d2f17;
+  --missing: #f09a90;
+  --missing-wash: #44231f;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 17px/1.6 var(--sans);
+}
+main {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 56px 20px 88px;
+  display: grid;
+  gap: 52px;
+}
+main > * { min-width: 0; }
+section { display: grid; gap: 14px; }
+section > * { min-width: 0; margin: 0; }
+h1, h2, h3 { line-height: 1.25; text-wrap: balance; margin: 0; }
+h1 { font-size: 38px; font-weight: 680; letter-spacing: -0.01em; }
+h2 { font-size: 25px; font-weight: 650; padding-top: 22px; border-top: 1px solid var(--line); }
+h3 { font-size: 18px; font-weight: 650; margin-top: 10px; }
+p, li { max-width: 68ch; }
+ul, ol { padding-left: 22px; display: grid; gap: 6px; }
+a { color: var(--live); }
+a:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+code { font: 400 0.86em var(--mono); background: var(--panel); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+figure { margin: 0; display: grid; gap: 10px; overflow-x: auto; }
+figcaption { font-size: 15px; color: var(--muted); max-width: 68ch; }
+svg { display: block; width: 100%; min-width: 660px; height: auto; color: var(--ink); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; line-height: 1.45; }
+th, td { text-align: left; vertical-align: top; padding: 10px 14px 10px 0; border-bottom: 1px solid var(--line); }
+th { font-weight: 650; }
+td:first-child code { white-space: nowrap; }
+.header { display: grid; gap: 12px; }
+.header__lede { font-size: 20px; line-height: 1.5; color: var(--muted); margin: 0; max-width: 62ch; }
+.header__date { font-size: 15px; color: var(--muted); margin: 0; }
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.pair__card { padding: 20px 22px; border-radius: 8px; border-top: 4px solid; display: grid; gap: 8px; align-content: start; }
+.pair__card p { margin: 0; }
+.pair__card--live { background: var(--live-wash); border-color: var(--live); }
+.pair__card--rest { background: var(--rest-wash); border-color: var(--rest); }
+.pair__title { font-size: 21px; font-weight: 680; margin: 0; }
+.term--live { color: var(--live); font-weight: 650; }
+.term--rest { color: var(--rest); font-weight: 650; }
+.status { display: inline-block; font-size: 13px; font-weight: 650; padding: 1px 9px; border-radius: 999px; white-space: nowrap; }
+.status--works { background: var(--live-wash); color: var(--live); }
+.status--partial { background: var(--rest-wash); color: var(--rest); }
+.status--missing { background: var(--missing-wash); color: var(--missing); }
+.callout { background: var(--panel); border-left: 4px solid var(--live); padding: 16px 20px; display: grid; gap: 8px; }
+.callout p { margin: 0; }
+.callout--warning { border-color: var(--missing); }
+.saves { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+.saves__item { background: var(--panel); padding: 16px 18px; border-radius: 8px; display: grid; gap: 6px; align-content: start; }
+.saves__item h3 { margin: 0; font-size: 17px; }
+.saves__item p { margin: 0; font-size: 15.5px; }
+.question { display: grid; gap: 6px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+.question:last-child { border-bottom: 0; padding-bottom: 0; }
+.question h3 { margin: 0; }
+.question p { margin: 0; }
+.question__idea { font-size: 15.5px; color: var(--muted); }
+.questions { display: grid; gap: 18px; }
+.diagram__box { fill: var(--paper); stroke: var(--line); stroke-width: 1.5; }
+.diagram__box--panel { fill: var(--panel); }
+.diagram__box--live { fill: var(--live-wash); stroke: var(--live); }
+.diagram__box--rest { fill: var(--rest-wash); stroke: var(--rest); }
+.diagram__box--missing { fill: var(--missing-wash); stroke: var(--missing); stroke-dasharray: 5 4; }
+.diagram__title { fill: currentColor; font: 650 14px var(--sans); }
+.diagram__heading { fill: currentColor; font: 650 15px var(--sans); }
+.diagram__text { fill: var(--muted); font: 400 12.5px var(--sans); }
+.diagram__label { fill: currentColor; font: 400 12.5px var(--sans); }
+.diagram__label--live { fill: var(--live); font-weight: 650; }
+.diagram__label--rest { fill: var(--rest); font-weight: 650; }
+.diagram__label--missing { fill: var(--missing); font-weight: 650; }
+.diagram__line { fill: none; stroke: currentColor; stroke-width: 1.5; }
+.diagram__line--live { stroke: var(--live); stroke-width: 2.25; }
+.diagram__line--rest { stroke: var(--rest); stroke-width: 2.25; }
+.diagram__line--missing { stroke: var(--missing); stroke-width: 1.75; stroke-dasharray: 5 4; }
+.diagram__head { fill: currentColor; }
+.diagram__head--live { fill: var(--live); }
+.diagram__head--rest { fill: var(--rest); }
+.diagram__head--missing { fill: var(--missing); }
+@media (max-width: 480px) { h1 { font-size: 30px; } main { padding-top: 32px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header class="header">
+  <h1>Rooms and sessions</h1>
+  <p class="header__lede">A <span class="term--live">Room</span> is the view you're working in together right now. A <span class="term--rest">session</span> is the view you keep. This document is for planning what people can do as they move between the two.</p>
+  <p class="header__date">Reflects the code on October 31, 2026. Decision recorded in <a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0004-the-room-owns-the-live-view-the-session-is-how-it-is-kept.md">ADR 0004</a>.</p>
+</header>
+
+<section>
+  <div class="pair">
+    <div class="pair__card pair__card--live">
+      <p class="pair__title">Room: live</p>
+      <p>A running object on the server. It takes changes from the model and from people's hands, puts them in order, and keeps every Viewer in step.</p>
+      <p>It's built for the conversation and the meeting. Its contents vanish after a day without use.</p>
+    </div>
+    <div class="pair__card pair__card--rest">
+      <p class="pair__title">Session: at rest</p>
+      <p>A JSON document that never changes once it's written. It can sit in a file or be compressed into a URL, and it can include IGV and Juicebox.</p>
+      <p>It's built for keeping and sharing. It has been the workhorse since long before the MCP server.</p>
+    </div>
+  </div>
+  <p>The Room doesn't replace the session. Each one covers what the other can't: a session can't be edited live by a group, and a Room can't last. So every interesting experience comes down to <strong>when and how a view crosses from one to the other</strong>.</p>
+  <figure>
+    <svg viewBox="0 0 800 300" role="img" aria-label="A session becomes a live Room through load_session, and a Room is saved as a snapshot URL through get_shareable_url. The conversation and Viewers connect to the Room. The full app reads and writes session files and Share URLs, but saving to a file from a Room and opening a Room's session in the full app do not work today.">
+      <defs>
+        <marker id="head-live" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head--live" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="head-rest" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head--rest" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="head-plain" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="head-missing" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head--missing" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+
+      <rect class="diagram__box diagram__box--rest" x="10" y="20" width="220" height="260" rx="8"/>
+      <text class="diagram__heading" x="120" y="46" text-anchor="middle">At rest</text>
+      <rect class="diagram__box" x="30" y="62" width="180" height="56" rx="5"/>
+      <text class="diagram__title" x="120" y="86" text-anchor="middle">Session file</text>
+      <text class="diagram__text" x="120" y="105" text-anchor="middle">JSON on disk</text>
+      <rect class="diagram__box" x="30" y="130" width="180" height="56" rx="5"/>
+      <text class="diagram__title" x="120" y="154" text-anchor="middle">Share URL</text>
+      <text class="diagram__text" x="120" y="173" text-anchor="middle">full app, whole session</text>
+      <rect class="diagram__box" x="30" y="198" width="180" height="56" rx="5"/>
+      <text class="diagram__title" x="120" y="222" text-anchor="middle">Snapshot URL</text>
+      <text class="diagram__text" x="120" y="241" text-anchor="middle">Viewer page, 3D view only</text>
+
+      <rect class="diagram__box diagram__box--live" x="370" y="90" width="170" height="120" rx="8"/>
+      <text class="diagram__heading" x="455" y="140" text-anchor="middle">Room</text>
+      <text class="diagram__text" x="455" y="160" text-anchor="middle">live viewer state</text>
+
+      <path class="diagram__line diagram__line--live" d="M210 158 H300 V125 H368" marker-end="url(#head-live)"/>
+      <text class="diagram__label diagram__label--live" x="290" y="115" text-anchor="middle">load_session</text>
+      <path class="diagram__line diagram__line--rest" d="M370 185 H300 V226 H212" marker-end="url(#head-rest)"/>
+      <text class="diagram__label diagram__label--rest" x="312" y="248" text-anchor="middle">get_shareable_url</text>
+      <path class="diagram__line diagram__line--missing" d="M400 90 V72 H212" marker-end="url(#head-missing)"/>
+      <text class="diagram__label diagram__label--missing" x="305" y="62" text-anchor="middle">save to a file: missing</text>
+
+      <rect class="diagram__box" x="620" y="40" width="170" height="80" rx="6"/>
+      <text class="diagram__title" x="705" y="74" text-anchor="middle">Conversation</text>
+      <text class="diagram__text" x="705" y="94" text-anchor="middle">the model's tool calls</text>
+      <rect class="diagram__box" x="620" y="180" width="170" height="80" rx="6"/>
+      <text class="diagram__title" x="705" y="214" text-anchor="middle">Viewers</text>
+      <text class="diagram__text" x="705" y="234" text-anchor="middle">Driver and Guests</text>
+      <line class="diagram__line" x1="618" y1="90" x2="542" y2="125" marker-end="url(#head-plain)"/>
+      <text class="diagram__label" x="570" y="95" text-anchor="middle">proposals</text>
+      <line class="diagram__line" x1="542" y1="175" x2="618" y2="210" marker-start="url(#head-plain)" marker-end="url(#head-plain)"/>
+      <text class="diagram__label" x="572" y="224" text-anchor="middle">state, hands</text>
+    </svg>
+    <figcaption>Two working bridges, and one conspicuous gap. Loading goes through a URL or string, and saving produces only a snapshot URL.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>What a Room is</h2>
+  <p>A Room is one running instance of the <code>Room</code> class (<code>server/src/room.ts</code>), a Cloudflare Durable Object. There's one for each Room id. It has no visual part: the Viewer is the web page that draws, and the Room only tells it what to draw.</p>
+  <div class="table-wrap">
+  <table>
+    <tbody>
+      <tr><th>It holds</th><td>The viewer state (ensemble URL and place in it, render style, structure appearance, viewer settings, camera), its version, what Viewers have reported drawing, and news for the model.</td></tr>
+      <tr><th>It doesn't hold</th><td>The 3D data, a history of earlier versions, the conversation, or who anyone is. The Room id is effectively the key to the Room.</td></tr>
+      <tr><th>It accepts changes from</th><td>The model's tool calls and people's hand changes, as equal proposals. The Room alone applies them.</td></tr>
+      <tr><th>Its lifetime</th><td>It expires after a day without use, and its contents are gone for good. Opening the same id again starts it empty.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>What a session is</h2>
+  <p>A session is JSON with up to three parts, one per viewer. Spacewalk writes the first part and treats the other two as IGV's and Juicebox's own business:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Part</th><th>Written by</th><th>What it covers</th><th>Can a Room use it?</th></tr></thead>
+    <tbody>
+      <tr><td><code>spacewalk</code></td><td>Spacewalk</td><td>Ensemble, locus, trace and group, render style, structure appearance, camera, checked tracks, open panels</td><td><span class="status status--partial">The 3D parts</span></td></tr>
+      <tr><td><code>igv</code></td><td>IGV (<code>browser.toJSON()</code>)</td><td>IGV's own session: tracks and their setup</td><td><span class="status status--missing">No</span></td></tr>
+      <tr><td><code>juicebox</code></td><td>Juicebox (<code>hic.toJSON()</code>)</td><td>Juicebox's own session, when a Hi-C map is loaded</td><td><span class="status status--missing">No</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Viewer settings (background, axes, ground plane, ruler) are never in a session. The full app keeps them in the browser's <code>localStorage</code>, and a Room keeps them in its viewer state. A snapshot URL carries them in a parameter of their own, beside the session (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0002-viewer-settings-beside-the-session.md">ADR 0002</a>).</p>
+  <h3>The same content takes three forms</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Form</th><th>Holds</th><th>Opens in</th><th>Made by</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Session file</strong></td><td>The whole object, as JSON</td><td>Full app</td><td>Full app's Save Session</td></tr>
+      <tr><td><strong>Share URL</strong></td><td>All parts, each its own compressed session string</td><td>Full app</td><td>Full app's Share</td></tr>
+      <tr><td><strong>Snapshot URL</strong></td><td>A reduced Spacewalk part, plus viewer settings</td><td>Viewer page</td><td><code>get_shareable_url</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>A session holds URLs and settings, not the data itself, so any session only works for as long as the ensemble's URL does. Short links also depend on the shortener staying up.</p>
+</section>
+
+<section>
+  <h2>What each one can carry</h2>
+  <p>They agree on the 3D scene and differ everywhere else, and those differences decide what survives a crossing.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>State</th><th><span class="term--rest">Full session</span></th><th><span class="term--live">Room</span></th><th>Survives load, then save?</th></tr></thead>
+    <tbody>
+      <tr><td>Ensemble, group, trace</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Render style, structure appearance</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Camera position and target</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Camera projection</td><td>Yes</td><td>No</td><td>No: the Viewer keeps its own framing</td></tr>
+      <tr><td>Viewer settings</td><td>Beside it</td><td>Yes</td><td>Yes, if the URL carried them</td></tr>
+      <tr><td>Locus</td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td>Open panels, checked IGV tracks</td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td>IGV and Juicebox sessions</td><td>Yes</td><td>No</td><td>No</td></tr>
+      <tr><td>Version, drawing reports, news</td><td>No</td><td>Yes</td><td>No: they mean nothing at rest</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>Moving between them today</h2>
+  <h3>Building a Room from a session</h3>
+  <p>You give the model a shareable URL or session string, and it calls <code>load_session</code>. A short link is followed to the full URL. The Spacewalk part becomes one change that <strong>replaces everything the Room shows</strong>, for everyone in it. The model's reply names any dropped IGV or Hi-C content.</p>
+  <h3>Saving a Room as a session</h3>
+  <p>You ask the model for a link, and it calls <code>get_shareable_url</code>. The Room writes a reduced Spacewalk part and the viewer settings into a snapshot URL. The Room carries on, and the link stays frozen at that moment. Only the model can do this, and there's no button in the Viewer.</p>
+  <h3>Every route, and how it stands</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>From</th><th>To</th><th>Status</th><th>How, or what's in the way</th></tr></thead>
+    <tbody>
+      <tr><td>Full-app Share URL</td><td>Room</td><td><span class="status status--partial">Drops some</span></td><td><code>load_session</code>. Locus and panels are dropped without a mention, and IGV and Hi-C content with one.</td></tr>
+      <tr><td>Snapshot URL</td><td>Room</td><td><span class="status status--works">Works</span></td><td><code>load_session</code>. This is how a saved view starts a new live one.</td></tr>
+      <tr><td>Bare session string</td><td>Room</td><td><span class="status status--works">Works</span></td><td><code>load_session</code>. It accepts a whole saved object as well as a block.</td></tr>
+      <tr><td>Session file on disk</td><td>Room</td><td><span class="status status--partial">Workaround</span></td><td>No direct route, and a URL pointing at a file is refused. Open the file in the full app, press Share, and give the model that URL.</td></tr>
+      <tr><td>Room</td><td>Snapshot URL</td><td><span class="status status--works">Works</span></td><td><code>get_shareable_url</code>, once an ensemble is loaded.</td></tr>
+      <tr><td>Room</td><td>Session file</td><td><span class="status status--missing">Missing</span></td><td>No tool does this, and the Viewer page leaves saving to the full app.</td></tr>
+      <tr><td>Room</td><td>Full app</td><td><span class="status status--missing">Missing</span></td><td>The block has no <code>panelVisibility</code>, so from reading the code the full app's <code>loadSession</code> stops before loading anything and shows no error. This has not been run. Viewer settings would also be ignored.</td></tr>
+      <tr><td>Full app, live</td><td>Room</td><td><span class="status status--missing">Missing</span></td><td>Only the Viewer page honours <code>?room=</code>.</td></tr>
+      <tr><td>IGV or Juicebox session</td><td>Room</td><td><span class="status status--missing">Out of scope</span></td><td>A Room shows only the 3D view. Those parts are never kept.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section>
+  <h2>A meeting in a Room</h2>
+  <p>Here's the scenario this document is mainly for. A Driver opens a Room from a session someone saved last week, and shares the Room link. Guests join, and the group explores with the model and with their own hands. The meeting ends, and someone asks: <strong>what do we want to keep?</strong></p>
+  <figure>
+    <svg viewBox="0 0 800 250" role="img" aria-label="A timeline. Before the meeting, a saved session is loaded into a Room. During the meeting the view changes through many versions and only the current one is kept. After the meeting, a save can capture only the final view, until the Room expires a day after its last use.">
+      <defs>
+        <marker id="time-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="time-live" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head--live" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="time-rest" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head--rest" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+      <text class="diagram__heading" x="85" y="26" text-anchor="middle">Before</text>
+      <text class="diagram__heading" x="340" y="26" text-anchor="middle">During the meeting</text>
+      <text class="diagram__heading" x="600" y="26" text-anchor="middle">After</text>
+      <text class="diagram__heading" x="745" y="26" text-anchor="middle">A day idle</text>
+
+      <rect class="diagram__box diagram__box--rest" x="20" y="46" width="130" height="58" rx="6"/>
+      <text class="diagram__title" x="85" y="72" text-anchor="middle">Saved session</text>
+      <text class="diagram__text" x="85" y="91" text-anchor="middle">from last week</text>
+
+      <rect class="diagram__box diagram__box--live" x="190" y="46" width="470" height="58" rx="6"/>
+      <text class="diagram__title" x="425" y="72" text-anchor="middle">The Room, live</text>
+      <text class="diagram__text" x="425" y="91" text-anchor="middle">Only the current version is kept; each change overwrites the last</text>
+      <line class="diagram__line diagram__line--live" x1="150" y1="75" x2="188" y2="75" marker-end="url(#time-live)"/>
+
+      <rect class="diagram__box diagram__box--missing" x="690" y="46" width="100" height="58" rx="6"/>
+      <text class="diagram__title" x="740" y="72" text-anchor="middle">Expired</text>
+      <text class="diagram__text" x="740" y="91" text-anchor="middle">contents gone</text>
+      <line class="diagram__line" x1="660" y1="75" x2="688" y2="75" marker-end="url(#time-head)"/>
+
+      <circle cx="240" cy="136" r="6" fill="currentColor"/>
+      <circle cx="310" cy="136" r="6" fill="currentColor"/>
+      <circle cx="380" cy="136" r="6" fill="currentColor"/>
+      <circle cx="450" cy="136" r="6" fill="currentColor"/>
+      <text class="diagram__label" x="190" y="172">Good views go by. Unless a link</text>
+      <text class="diagram__label" x="190" y="190">is made at the time, they're lost.</text>
+      <line class="diagram__line diagram__line--rest" x1="450" y1="144" x2="450" y2="192" marker-end="url(#time-rest)"/>
+      <rect class="diagram__box diagram__box--rest" x="385" y="194" width="130" height="44" rx="6"/>
+      <text class="diagram__title" x="450" y="221" text-anchor="middle">Snapshot URL</text>
+
+      <line class="diagram__line diagram__line--rest" x1="600" y1="106" x2="600" y2="192" marker-end="url(#time-rest)"/>
+      <rect class="diagram__box diagram__box--rest" x="530" y="194" width="140" height="44" rx="6"/>
+      <text class="diagram__title" x="600" y="214" text-anchor="middle">Final view</text>
+      <text class="diagram__text" x="600" y="231" text-anchor="middle">if someone asks in time</text>
+    </svg>
+    <figcaption>A save records a single moment. The Room's version number counts changes, but no earlier version can be read back.</figcaption>
+  </figure>
+  <p>Shared Rooms are planned for milestone M3, which hasn't started. A second Viewer already gets every change today, but Guests, live camera following and multi-Viewer reporting are still to come.</p>
+  <div class="callout callout--warning">
+    <p><strong>What would actually happen today.</strong> A Guest has no way to save, because saving goes through the Driver's conversation. The Driver has to remember to ask, and must do it before the Room's contents expire. The result opens only on the Viewer page, as a link. If Spacewalk runs inside geenee, the milestone plan also withholds <code>get_shareable_url</code>, which would remove the only way out of the Room.</p>
+  </div>
+</section>
+
+<section>
+  <h2>What might "save" mean?</h2>
+  <p>People may want different things when they ask to keep a meeting. These are the things we could design for. Only the first has any support today.</p>
+  <div class="saves">
+    <div class="saves__item">
+      <h3>The final view</h3>
+      <p>Where the group ended up. Supported today through a snapshot URL, when someone asks the model.</p>
+    </div>
+    <div class="saves__item">
+      <h3>The moments along the way</h3>
+      <p>"Keep this one." The model can make several snapshot links during a meeting, but nothing prompts it, and nothing gathers them.</p>
+    </div>
+    <div class="saves__item">
+      <h3>A file to archive</h3>
+      <p>A <code>.json</code> a lab can store with its data, like the ones it already has. It isn't possible from a Room.</p>
+    </div>
+    <div class="saves__item">
+      <h3>A way back to the full app</h3>
+      <p>Continue the work with IGV and Juicebox beside the 3D view. It needs a session the full app will accept.</p>
+    </div>
+    <div class="saves__item">
+      <h3>The reasoning</h3>
+      <p>Why this view mattered. That lives in the conversation, and a session has no place for it. A summary could sit next to the links it describes.</p>
+    </div>
+    <div class="saves__item">
+      <h3>The Room itself</h3>
+      <p>Pick up tomorrow in the same Room link. A saved session can seed a new live view, but the same id starts empty after expiry and has no memory of it.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Questions to work through</h2>
+  <p>None of these are decided. The sketches under each are starting points for discussion.</p>
+  <div class="questions">
+    <div class="question">
+      <h3>Who can save?</h3>
+      <p>Guests are equal to the Driver in what the Viewers show, yet only the Driver's model can save. Should anyone in the Room be able to?</p>
+      <p class="question__idea">A "Copy link to this view" control in the Viewer would give everyone the same power. M3 leaves roles out of scope, so limiting who can save would need new concepts.</p>
+    </div>
+    <div class="question">
+      <h3>Do we ask the model, press a button, or both?</h3>
+      <p>Asking fits the conversation, but the model has to be involved and Guests can't reach it. A button needs no model, though the model wouldn't know about the save unless it was told.</p>
+      <p class="question__idea">A hand save could appear in the model's news, as hand changes already do, so it can mention what was kept.</p>
+    </div>
+    <div class="question">
+      <h3>How do we protect the end of the meeting?</h3>
+      <p>Nothing prompts a save, and an expired Room can't be recovered. It also has no identity to contact, or anywhere of its own to send a last save.</p>
+      <p class="question__idea">The model could offer a link when the conversation seems to wind down. The Viewer could show how long until expiry. Keeping an automatic final save would raise the question of who owns it.</p>
+    </div>
+    <div class="question">
+      <h3>Should a Room remember moments?</h3>
+      <p>Today's single-version record keeps the Room simple, but it means the path through a meeting disappears.</p>
+      <p class="question__idea">Named bookmarks in the Room, kept as session strings, could become a list at the end. A full version history would be much larger and would raise harder questions, such as whether undo applies to everyone.</p>
+    </div>
+    <div class="question">
+      <h3>How does a file come out of a Room?</h3>
+      <p>People trust the session file, but a remote server can't write to their disk, and a tool reply isn't a download.</p>
+      <p class="question__idea">A save button on the Viewer page could download the file, though that page currently leaves saving to the full app. Another route is a link that opens in the full app, which can then save.</p>
+    </div>
+    <div class="question">
+      <h3>Should "Open in full Spacewalk" exist?</h3>
+      <p>It would turn a meeting's result into the app people already know, with IGV and Juicebox available. It needs a block the full app accepts, which means tolerating missing panels and locus or writing them.</p>
+      <p class="question__idea">Loading a Room's block could be made tolerant in the full app. A locus would have to come from the ensemble, which is something only a Viewer has loaded.</p>
+    </div>
+    <div class="question">
+      <h3>Should a Room carry what it doesn't understand?</h3>
+      <p>Loading a full-app session into a Room and saving it loses the IGV and Juicebox parts, even though nobody in the Room changed them.</p>
+      <p class="question__idea">A Room could keep those parts untouched and write them back on save. ADR 0001 rejected an opaque session as the Room's record, but it didn't rule out carrying parts that the Room never reads. The risk is that the 3D view and the saved IGV locus drift apart.</p>
+    </div>
+    <div class="question">
+      <h3>What should loading into a busy Room do?</h3>
+      <p>Loading replaces the view for everyone at once, with no way back. In a meeting, that can erase what the group was just looking at.</p>
+      <p class="question__idea">The model could offer to save first, or a load could open a new Room instead. The tool description could also tell it to check whether Viewers are connected.</p>
+    </div>
+    <div class="question">
+      <h3>What's the right save path inside geenee?</h3>
+      <p>The M2 plan withholds <code>get_shareable_url</code>, as it does for IGV. That leaves a Spacewalk Room in geenee with no way to save.</p>
+      <p class="question__idea">Geenee could offer a Workspace-level save covering all three viewers. That could also be the natural home for a real combined session.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Rough edges found while writing this</h2>
+  <ul>
+    <li><strong>Silent drops:</strong> <code>load_session</code> doesn't mention dropped locus or panel state.</li>
+    <li><strong>A false IGV warning:</strong> the full app writes <code>sessionURL</code> into every Share URL, so from reading the code, <code>load_session</code> reports IGV tracks as not loaded even when there were none.</li>
+    <li><strong>Silent failure in the full app:</strong> a block with no <code>panelVisibility</code> makes <code>loadSession</code> return with nothing loaded and no message. Anything that hands the full app a Room's block will meet this first.</li>
+    <li><strong>Two definitions of one shape:</strong> structure appearance is read field by field in both repos, so a new field must be added to each.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Words used here</h2>
+  <div class="table-wrap">
+  <table>
+    <tbody>
+      <tr><th>Room</th><td>What ties one conversation to the Viewers showing its 3D view.</td></tr>
+      <tr><th>Viewer</th><td>The web page showing Spacewalk's 3D view, attached to one Room.</td></tr>
+      <tr><th>Driver, Guest</th><td>The person whose conversation a Room belongs to, and anyone who joins through its Room link.</td></tr>
+      <tr><th>Viewer state</th><td>The Room's one versioned record of what its Viewers show.</td></tr>
+      <tr><th>Session</th><td>Spacewalk's saved JSON record of what to restore, with IGV and Juicebox parts when present.</td></tr>
+      <tr><th>Session string</th><td>A compressed session payload, the form it takes inside a URL.</td></tr>
+      <tr><th>Share URL, snapshot URL</th><td>A link from the full app carrying a whole session, and a link to one frozen view on the Viewer page.</td></tr>
+      <tr><th>Room link</th><td>The link that brings someone into a live Room. Unlike the other two, it doesn't hold any state.</td></tr>
+      <tr><th>Load, save</th><td>To replace what a Room shows with a session, and to write what it shows now as a session.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The full vocabulary is in <a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/GLOSSARY.md"><code>GLOSSARY.md</code></a>. Spacewalk's session format is in <code>development-notes/spacewalk-mcp/session-format.md</code> in the <code>spacewalk</code> repo.</p>
+</section>
+
+</main>
+</body>
+</html>

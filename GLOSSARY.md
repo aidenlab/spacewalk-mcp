@@ -38,8 +38,33 @@ _Avoid_: state document, session, model state
 How the 3D structure is drawn, as distinct from the furniture around it: ball and stick radius steps, whether sticks show, point size and transparency, color ramp, circular genome. Shared by everyone in the Room.
 _Avoid_: render settings, viewer settings (those are the furniture)
 
+### What outlasts the Room
+
+**Session**:
+Spacewalk's saved record of what to restore, as JSON: the Spacewalk session block, and IGV's and Juicebox's own sessions when present. It does not change once written and outlasts any Room; a Room is live, a session is at rest.
+_Avoid_: Room, viewer state, conversation
+
+**Session block**:
+The Spacewalk part of a session: the 3D view, and what only the full app reads, such as the locus and panel visibility.
+
 **Session string**:
 Spacewalk's existing compressed session payload. Here it exists only at the edges — written for a shareable URL, read when a session is loaded — never as the Room's own record.
+
+**Snapshot URL**:
+A link that opens one frozen view on the Viewer page with no Room, carrying a session block and, beside it, the viewer settings. Later changes in the Room do not reach it.
+_Avoid_: Room link
+
+**Share URL**:
+The link the full Spacewalk app hands out, carrying a whole session, including IGV and Juicebox when present.
+_Avoid_: Room link, snapshot URL
+
+**Load**:
+To replace everything a Room shows with what a session says.
+_Avoid_: import, merge
+
+**Save**:
+To write what a Room shows now as a session. The Room carries on, and the session does not follow it.
+_Avoid_: export, sync, checkpoint
 
 ### Changing it
 
