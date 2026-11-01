@@ -2,7 +2,7 @@
  * The scene and state tools, through an MCP client: what each proposes to the Room, and what its
  * reply tells the model.
  */
-import { env, runDurableObjectAlarm } from 'cloudflare:test'
+import { env, runDurableObjectAlarm, runInDurableObject } from 'cloudflare:test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -52,6 +52,34 @@ function text(result: ToolResult): string {
 }
 
 const CAMERA = { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 } }
+
+describe('news a Room stored before the camera left the proposals', () => {
+  const STORED_CAMERA_NEWS = [
+    { type: 'hand', version: 1, proposal: { type: 'set-camera', camera: CAMERA } },
+    { type: 'hand', version: 2, proposal: { type: 'reset-camera' } },
+  ]
+  const storeNews = (room: string, news: object[]) =>
+    runInDurableObject(env.ROOM.getByName(room), (_, ctx) => ctx.storage.put('news', news))
+
+  it('is skipped in a reply, and the rest of the news still told', async () => {
+    const room = await openRoom()
+    const ball = { type: 'hand', version: 3, proposal: { type: 'step-ball-radius', direction: 'up' } }
+    await storeNews(room, [...STORED_CAMERA_NEWS, ball])
+
+    const reply = text(await call('read_viewer_state', { room }))
+
+    expect(reply).toContain('Changed since your last reply, not by you: made the balls bigger.')
+  })
+
+  it('counts as nothing changed when it is all there is', async () => {
+    const room = await openRoom()
+    await storeNews(room, STORED_CAMERA_NEWS)
+
+    const reply = text(await call('read_viewer_state', { room }))
+
+    expect(reply).toContain('Nothing changed since your last reply that you did not cause.')
+  })
+})
 
 describe('reset_camera', () => {
   it('says there is no camera to reset with no Viewer open, and makes no version', async () => {
@@ -277,7 +305,23 @@ describe('get_shareable_url', () => {
     const room = await openRoom()
     await env.ROOM.getByName(room).propose({ type: 'load-ensemble', url: ENSEMBLE_URL })
     await joinAndSync(room)
-    expect(text(await call('get_shareable_url', { room }, shortenerDown))).toContain('did not report its camera in time')
+
+    const reply = text(await call('get_shareable_url', { room }, shortenerDown))
+
+    expect(reply).toContain('did not report its camera in time')
+    const block = (await readSessionString(shareableUrlIn(reply).session)) as Record<string, unknown>
+    expect(block).not.toHaveProperty('cameraLightingRig')
+  })
+
+  it('opens framed, and says so, when no Viewer is open', async () => {
+    const room = await openRoom()
+    await env.ROOM.getByName(room).propose({ type: 'load-ensemble', url: ENSEMBLE_URL })
+
+    const reply = text(await call('get_shareable_url', { room }, shortenerDown))
+
+    expect(reply).toContain('No Viewer is open, so there is no camera')
+    const block = (await readSessionString(shareableUrlIn(reply).session)) as Record<string, unknown>
+    expect(block).not.toHaveProperty('cameraLightingRig')
   })
 
   it('uses a loaded session\'s pose while no Viewer has drawn it', async () => {

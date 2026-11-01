@@ -63,6 +63,18 @@ describe('joining a Room', () => {
     await viewer.closed
   })
 
+  it('refuses a Viewer still on protocol 1, telling it to reload', async () => {
+    const { id } = await openRoom()
+    const viewer = await connect(id)
+    viewer.send({ type: 'join', protocol: 1 })
+    expect(await viewer.next()).toEqual({
+      type: 'error',
+      code: 'protocol-mismatch',
+      message: expect.stringMatching(/reload the viewer/i),
+    })
+    await viewer.closed
+  })
+
   it('answers a join to an expired Room with "this Room has expired"', async () => {
     const { id, room } = await openRoom()
     await runDurableObjectAlarm(room)
@@ -451,6 +463,24 @@ describe('the camera', () => {
     const second = await joinAndSync(id)
     second.send({ type: 'took-camera' })
     await report(second, { version: 0, kind: null, result: { outcome: 'drawn' } })
+    await heardBy(id, second)
+  })
+
+  it('passes to a Viewer whose person lets go of it', async () => {
+    const id = await room()
+    const first = await joinAndSync(id)
+    const second = await joinAndSync(id)
+    second.send({ type: 'camera-released', ...POSE })
+    expect(await first.next()).toEqual({ type: 'camera-moved', ...POSE })
+    await heardBy(id, second)
+  })
+
+  it('passes to a Viewer whose person resets it', async () => {
+    const id = await room()
+    const first = await joinAndSync(id)
+    const second = await joinAndSync(id)
+    second.send({ type: 'camera-reset' })
+    expect(await first.next()).toEqual({ type: 'reset-camera' })
     await heardBy(id, second)
   })
 
