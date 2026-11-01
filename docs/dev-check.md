@@ -1,6 +1,6 @@
 # dev-check cheat sheet
 
-`scripts/dev-check.mjs` drives a Viewer on the dev deployment from the terminal, taking the model's place: one tool call per run, aimed at a Room. Use it for a smoke test after `scripts/deploy-wizard.sh`, without a Host.
+`scripts/dev-check.mjs` drives a Viewer on the dev deployment from the terminal, taking the model's place: one tool call per run, aimed at a Room. Use it for a smoke test after `scripts/deploy-dev.sh`, without a Host.
 
 Room, Viewer and Room link are defined in `GLOSSARY.md`.
 
