@@ -55,4 +55,6 @@ scripts/deploy-prod.sh prod-2026-11-01
 
 `deploy-prod.sh` tests and deploys from throwaway worktrees at the tag, so uncommitted changes never ship. A second release on a day is `prod-2026-11-01.1`. To roll back, deploy an earlier tag. The first release also creates the Worker, the Pages project and the secret. The connector URL to give Claude or ChatGPT is the Worker's address plus `/mcp`.
 
+[`docs/production-release.md`](docs/production-release.md) is the full release procedure, with its checks and rollback.
+
 [`docs/dev-check.md`](docs/dev-check.md) is the cheat sheet for `scripts/dev-check.mjs`, which calls one tool on the dev Worker from the terminal: a smoke test without a Host.
