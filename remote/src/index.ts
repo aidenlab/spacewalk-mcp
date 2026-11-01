@@ -5,6 +5,7 @@ export {
   attachRemote,
   END_MESSAGES,
   type AttachOptions,
+  type CameraPort,
   type Drawing,
   type EndReason,
   type Remote,

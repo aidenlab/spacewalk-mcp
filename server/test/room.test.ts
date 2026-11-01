@@ -38,7 +38,6 @@ describe('opening a Room', () => {
           groundPlane: { visible: false, ...IRON },
           referenceRuler: { visible: false, ...IRON },
         },
-        camera: null,
       },
     })
   })
@@ -49,7 +48,7 @@ describe('a Room that was never opened', () => {
     const room = freshRoom()
     const unknown = { ok: false, reason: 'room-unknown' }
     expect(await room.read()).toMatchObject(unknown)
-    expect(await room.propose({ type: 'reset-camera' })).toMatchObject(unknown)
+    expect(await room.propose({ type: 'adjust-background', direction: 'darker' })).toMatchObject(unknown)
   })
 })
 
@@ -73,7 +72,7 @@ describe('a Room left unused for a day', () => {
     const room = freshRoom()
     await room.open()
     const before = Date.now()
-    await room.propose({ type: 'reset-camera' })
+    await room.propose({ type: 'adjust-background', direction: 'darker' })
     const after = Date.now()
     const alarm = await runInDurableObject(room, (_, ctx) => ctx.storage.getAlarm())
     expect(alarm).toBeGreaterThanOrEqual(before + DAY)
@@ -88,7 +87,7 @@ describe('a Room left unused for a day', () => {
 
     const expired = { ok: false, reason: 'room-expired' }
     expect(await room.read()).toMatchObject(expired)
-    expect(await room.propose({ type: 'reset-camera' })).toMatchObject(expired)
+    expect(await room.propose({ type: 'adjust-background', direction: 'darker' })).toMatchObject(expired)
     expect(await room.recordKind(1, 'trace')).toMatchObject(expired)
   })
 
@@ -117,12 +116,12 @@ describe('a Room left unused for a day', () => {
   it('counts on from its last version after a restart, so no Viewer takes it for old', async () => {
     const room = freshRoom()
     await room.open()
-    await room.propose({ type: 'reset-camera' })
-    await room.propose({ type: 'reset-camera' })
+    await room.propose({ type: 'adjust-background', direction: 'darker' })
+    await room.propose({ type: 'adjust-background', direction: 'darker' })
     await runDurableObjectAlarm(room)
 
     expect(await room.open()).toMatchObject({ version: 3 })
-    expect(await room.propose({ type: 'reset-camera' })).toMatchObject({ version: 4 })
+    expect(await room.propose({ type: 'adjust-background', direction: 'darker' })).toMatchObject({ version: 4 })
   })
 })
 
@@ -164,16 +163,6 @@ describe('a proposal', () => {
         ensemble: { url: 'https://example.com/b.sw', groupKey: null, traceKey: null, kind: null },
       },
     })
-  })
-
-  it('loading another ensemble drops the camera, for the Viewer to frame the new structure', async () => {
-    const room = freshRoom()
-    await room.open()
-    await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
-    const camera = { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 } }
-    await room.propose({ type: 'set-camera', camera })
-    const result = await room.propose({ type: 'load-ensemble', url: 'https://example.com/b.sw' })
-    expect(result).toMatchObject({ state: { camera: null } })
   })
 
   it('choosing a group goes to its default trace', async () => {
@@ -392,22 +381,6 @@ describe('recording the kind a Viewer reports', () => {
     await room.propose({ type: 'load-ensemble', url: 'https://example.com/a.sw' })
     await room.recordKind(7, 'trace')
     expect(await room.read()).toMatchObject({ state: { ensemble: { kind: null } } })
-  })
-})
-
-describe('the camera', () => {
-  const camera = { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 } }
-
-  it('is set by a Viewer and reset by a tool', async () => {
-    const room = freshRoom()
-    await room.open()
-    expect(await room.propose({ type: 'set-camera', camera })).toMatchObject({
-      state: { camera },
-    })
-    expect(await room.propose({ type: 'reset-camera' })).toMatchObject({
-      version: 2,
-      state: { camera: null },
-    })
   })
 })
 

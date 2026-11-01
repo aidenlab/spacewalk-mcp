@@ -242,11 +242,9 @@ describe('the reply to a command tool', () => {
   it('tells the hand changes since the previous reply, once', async () => {
     const room = await openRoom()
     const viewer = await joinAndSync(room)
-    const camera = { position: { x: 0, y: 0, z: 9 }, target: { x: 0, y: 0, z: 0 } }
     for (const proposal of [
       { type: 'step-ball-radius', direction: 'up' },
-      { type: 'set-camera', camera },
-      { type: 'set-camera', camera },
+      { type: 'set-render-style', style: 'ribbon' },
     ]) {
       viewer.send({ type: 'propose', proposal })
       await viewer.next()
@@ -254,7 +252,7 @@ describe('the reply to a command tool', () => {
 
     const reply = await callWhileRealizing(room, viewer, { outcome: 'drawn' })
     expect(reply).toContain(
-      'Changed since your last reply, not by you: made the balls bigger; the camera was moved.',
+      'Changed since your last reply, not by you: made the balls bigger; switched to ribbon.',
     )
     const next = await callWhileRealizing(room, viewer, { outcome: 'drawn' })
     expect(next).toContain('Nothing changed since your last reply that you did not cause.')

@@ -37,7 +37,6 @@ export function emptyViewerState(): ViewerState {
       groundPlane: { visible: false, ...IRON },
       referenceRuler: { visible: false, ...IRON },
     },
-    camera: null,
   }
 }
 
@@ -53,8 +52,6 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
       return applied({
         ...state,
         ensemble: { url: proposal.url, groupKey: null, traceKey: null, kind: null },
-        // The pose was chosen for the structure being replaced.
-        camera: null,
       })
     case 'select-ensemble-group':
       if (!ensemble) return refused(NO_ENSEMBLE)
@@ -90,17 +87,12 @@ export function apply(state: ViewerState, proposal: Proposal): Applied {
       const background = stepLightness(settings.background, proposal.direction)
       return applied({ ...state, viewerSettings: { ...settings, background } })
     }
-    case 'set-camera':
-      return applied({ ...state, camera: proposal.camera })
-    case 'reset-camera':
-      return applied({ ...state, camera: null })
     case 'load-session':
       return applied({
         ensemble: { ...proposal.ensemble, kind: null },
         renderStyle: proposal.renderStyle,
         structureAppearance: proposal.structureAppearance,
         viewerSettings: patched(state.viewerSettings, proposal.viewerSettings),
-        camera: proposal.camera,
       })
   }
 }

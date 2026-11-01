@@ -142,7 +142,7 @@ td:first-child code { white-space: nowrap; }
 <header class="header">
   <h1>Rooms and sessions</h1>
   <p class="header__lede">A <span class="term--live">Room</span> is the view you're working in together right now. A <span class="term--rest">session</span> is the view you keep. This document is for planning what people can do as they move between the two.</p>
-  <p class="header__date">Reflects the code on October 31, 2026. Decision recorded in <a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0004-the-room-owns-the-live-view-the-session-is-how-it-is-kept.md">ADR 0004</a>.</p>
+  <p class="header__date">Reflects the code on November 1, 2026. Decision recorded in <a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0004-the-room-owns-the-live-view-the-session-is-how-it-is-kept.md">ADR 0004</a>.</p>
 </header>
 
 <section>
@@ -212,8 +212,8 @@ td:first-child code { white-space: nowrap; }
   <div class="table-wrap">
   <table>
     <tbody>
-      <tr><th>It holds</th><td>The viewer state (ensemble URL and place in it, render style, structure appearance, viewer settings, camera), its version, what Viewers have reported drawing, and news for the model.</td></tr>
-      <tr><th>It doesn't hold</th><td>The 3D data, a history of earlier versions, the conversation, or who anyone is. The Room id is effectively the key to the Room.</td></tr>
+      <tr><th>It holds</th><td>The viewer state (ensemble URL and place in it, render style, structure appearance, viewer settings), its version, what Viewers have reported drawing, and news for the model.</td></tr>
+      <tr><th>It doesn't hold</th><td>The camera pose, which a Viewer's rig owns (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0005-one-owner-for-the-camera-the-rig-not-the-room.md">ADR 0005</a>), the 3D data, a history of earlier versions, the conversation, or who anyone is. The Room id is effectively the key to the Room.</td></tr>
       <tr><th>It accepts changes from</th><td>The model's tool calls and people's hand changes, as equal proposals. The Room alone applies them.</td></tr>
       <tr><th>Its lifetime</th><td>It expires after a day without use, and its contents are gone for good. Opening the same id again starts it empty.</td></tr>
     </tbody>
@@ -258,7 +258,7 @@ td:first-child code { white-space: nowrap; }
     <tbody>
       <tr><td>Ensemble, group, trace</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
       <tr><td>Render style, structure appearance</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
-      <tr><td>Camera position and target</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
+      <tr><td>Camera position and target</td><td>Yes</td><td>Only until a Viewer draws the load</td><td>Yes, if a Viewer is open to report it or the load is undrawn</td></tr>
       <tr><td>Camera projection</td><td>Yes</td><td>No</td><td>No: the Viewer keeps its own framing</td></tr>
       <tr><td>Viewer settings</td><td>Beside it</td><td>Yes</td><td>Yes, if the URL carried them</td></tr>
       <tr><td>Locus</td><td>Yes</td><td>No</td><td>No</td></tr>
@@ -275,7 +275,7 @@ td:first-child code { white-space: nowrap; }
   <h3>Building a Room from a session</h3>
   <p>You give the model a shareable URL or session string, and it calls <code>load_session</code>. A short link is followed to the full URL. The Spacewalk part becomes one change that <strong>replaces everything the Room shows</strong>, for everyone in it. The model's reply names any dropped IGV or Hi-C content.</p>
   <h3>Saving a Room as a session</h3>
-  <p>You ask the model for a link, and it calls <code>get_shareable_url</code>. The Room writes a reduced Spacewalk part and the viewer settings into a snapshot URL. The Room carries on, and the link stays frozen at that moment. Only the model can do this, and there's no button in the Viewer.</p>
+  <p>You ask the model for a link, and it calls <code>get_shareable_url</code>. The Room asks a Viewer for its camera pose, and writes a reduced Spacewalk part and the viewer settings into a snapshot URL. With no Viewer to ask, the snapshot opens framed, and the reply says so. The Room carries on, and the link stays frozen at that moment. Only the model can do this, and there's no button in the Viewer.</p>
   <h3>Every route, and how it stands</h3>
   <div class="table-wrap">
   <table>

@@ -84,13 +84,6 @@ export const COMMAND_TOOLS: CommandTool[] = [
     proposal: ({ direction }) => ({ type: 'step-stick-radius', direction: direction as RadiusDirection }),
   },
   {
-    name: 'reset_camera',
-    title: 'Reset the camera',
-    description: 'Put the camera back where Spacewalk frames the whole 3D structure.',
-    inputSchema: {},
-    proposal: () => ({ type: 'reset-camera' }),
-  },
-  {
     name: 'set_background_color',
     title: 'Set the background color',
     description: `Set the color behind the 3D structure, by Apple crayon name or hex (#rrggbb). The crayons: ${APPLE_CRAYON_NAMES.join(', ')}.`,
