@@ -31,12 +31,26 @@ _Avoid_: bystander, participant, collaborator
 ### What the Room holds
 
 **Viewer state**:
-The Room's one versioned record of what its Viewers show: the loaded ensemble and its place in it, the structure appearance, the viewer settings, and the camera. The Room is its only author; Viewers are replicas.
+The Room's one versioned record of what its Viewers show: the loaded ensemble and its place in it, the render style, the structure appearance and the viewer settings, but not the camera pose. The Room is its only author; Viewers are replicas.
 _Avoid_: state document, session, model state
 
 **Structure appearance**:
 How the 3D structure is drawn, as distinct from the furniture around it: ball and stick radius steps, whether sticks show, point size and transparency, color ramp, circular genome. Shared by everyone in the Room.
 _Avoid_: render settings, viewer settings (those are the furniture)
+
+### The camera
+
+**Camera pose**:
+Where the camera is and what it looks at. With no Viewer open there is no camera, and so no camera pose, apart from one a load has brought and no Viewer has drawn yet.
+_Avoid_: camera state, camera position, view
+
+**Framing**:
+The camera pose and projection a Viewer works out for the trace it shows, on arriving at that trace or on a reset.
+_Avoid_: default camera, home position
+
+**Camera holder**:
+The one Viewer whose camera is the truth at any moment, which the others follow. It is the Viewer where a person last took hold of the camera, let go of it, reset it or stepped to another trace, and when that Viewer leaves, the longest-connected one takes over.
+_Avoid_: leader, presenter, camera owner
 
 ### What outlasts the Room
 

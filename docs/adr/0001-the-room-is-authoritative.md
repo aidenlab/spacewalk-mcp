@@ -1,5 +1,7 @@
 # The Room is authoritative
 
+Superseded for the camera by [ADR 0005](0005-one-owner-for-the-camera-the-rig-not-the-room.md): the Room no longer holds a camera pose, apart from a load's undelivered one. The rest stands.
+
 Each Room holds one structured, versioned **viewer state**: the ensemble (URL, group, trace, kind), the render style and structure appearance, the viewer settings, and the camera. Tool calls and Viewers only make **proposals**; the Room orders them, applies them, bumps the version and broadcasts the result to every Viewer. Viewers are replicas: a reconnect is a resync, and a late joiner's first sync is the same thing. Relative steps (bigger balls, a darker background) are applied by the Room to the current value, so they need no read-then-write and cannot race a hand change. A tool reply waits for a Viewer to report the new version **realized** (drawn, or failed), with a timeout.
 
 The viewer state is not a session string. Spacewalk's session string is written only at the edges, for a shareable URL, and read only by `load_session`; holding it opaquely would leave the Room unable to apply a single change without a Viewer present.
