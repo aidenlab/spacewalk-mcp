@@ -17,17 +17,6 @@ describe('the changes the model did not cause', () => {
     expect(phraseNews(news)).toBe('switched to ribbon; stepped to trace 12')
   })
 
-  it('collapse every camera move into one', () => {
-    const camera = { position: { x: 0, y: 0, z: 1 }, target: { x: 0, y: 0, z: 0 } }
-    const news = byHand(
-      { type: 'set-camera', camera },
-      { type: 'step-ball-radius', direction: 'up' },
-      { type: 'set-camera', camera },
-      { type: 'set-camera', camera },
-    )
-    expect(phraseNews(news)).toBe('the camera was moved; made the balls bigger')
-  })
-
   it('include a Viewer failing to draw a version', () => {
     const news: News[] = [{ type: 'failure', version: 4, reason: 'could not fetch the ensemble' }]
     expect(phraseNews(news)).toBe('a Viewer failed to draw version 4: could not fetch the ensemble')
@@ -45,7 +34,6 @@ describe('the changes the model did not cause', () => {
     [{ type: 'step-stick-radius', direction: 'up' }, 'made the sticks thicker'],
     [{ type: 'step-stick-radius', direction: 'down' }, 'made the sticks thinner'],
     [{ type: 'adjust-background', direction: 'darker' }, 'made the background darker'],
-    [{ type: 'reset-camera' }, 'reset the camera'],
     [
       {
         type: 'load-session',

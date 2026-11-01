@@ -12,7 +12,7 @@ import {
   type JoinCardContent,
 } from './joinCard.ts'
 import { changeReply, lookReply } from './reply.ts'
-import type { Refusal, Room } from './room.ts'
+import type { CameraReading, CameraResetOutcome, Refusal, Room } from './room.ts'
 import { mintRoomId, parseRoomId } from './roomId.ts'
 import { readSession, shorten, snapshotUrl, type Fetch } from './session.ts'
 
@@ -29,6 +29,8 @@ export interface ToolDeps {
   hostRoomId: string | null
   /** How long a change waits for a Viewer to report it realized; 20 s unless a test says less. */
   realizeTimeoutMs?: number
+  /** How long a question about the camera waits for the holder; 3 s unless a test says less. */
+  cameraTimeoutMs?: number
   /** The example ensembles; R2's list, kept a few minutes, unless a test gives its own. */
   exampleEnsembles?: ExampleEnsembles
   /** The network, for shortening a URL and following a short one; the Worker's unless a test says. */
@@ -37,6 +39,23 @@ export interface ToolDeps {
 
 /** How long a change waits for the first Viewer to report it realized. */
 const REALIZE_TIMEOUT_MS = 20_000
+
+/** How long a question about the camera waits: reading a pose takes a Viewer no time at all. */
+const CAMERA_TIMEOUT_MS = 3_000
+
+/** Why a snapshot carries no camera pose, for the model to tell the user. */
+const NO_POSE: Record<NonNullable<CameraReading['missing']>, string> = {
+  'no-viewer': 'No Viewer is open, so there is no camera: this snapshot opens with the structure framed.',
+  'no-answer': 'The Viewer did not report its camera in time, so this snapshot opens with the structure framed.',
+  'other-place': 'The Viewer was still catching up to what the Room shows, so this snapshot opens with the structure framed.',
+}
+
+/** How a reset of the camera came out, in words. */
+const RESET_REPLY: Record<CameraResetOutcome, string> = {
+  confirmed: 'The camera was reset: the structure is framed.',
+  'no-answer': 'The Viewers were told to reset the camera, but none confirmed it in time.',
+  'no-viewer': 'No Viewer is open, so there is no camera to reset. The next Viewer opens with the structure framed.',
+}
 
 /**
  * The example list from R2. Every request gets a fresh McpServer, so the list is kept here, for
@@ -118,6 +137,7 @@ export function registerTools(
     roomById,
     hostRoomId,
     realizeTimeoutMs = REALIZE_TIMEOUT_MS,
+    cameraTimeoutMs = CAMERA_TIMEOUT_MS,
     exampleEnsembles: examples = EXAMPLE_ENSEMBLES,
     fetch = (url, init) => globalThis.fetch(url, init),
   }: ToolDeps,
@@ -228,7 +248,7 @@ export function registerTools(
     {
       title: 'Get a shareable URL',
       description:
-        'Get a URL that opens a frozen snapshot of what Spacewalk shows now: the ensemble, its place, the structure appearance, the viewer settings and the camera. It has no Room: whoever opens it sees that snapshot and later changes do not reach it. To bring someone into the Room itself, give them the Room link instead.',
+        'Get a URL that opens a frozen snapshot of what Spacewalk shows now: the ensemble, its place, the structure appearance, the viewer settings and, if a Viewer is open to report it, the camera. It has no Room: whoever opens it sees that snapshot and later changes do not reach it. To bring someone into the Room itself, give them the Room link instead.',
       inputSchema: { room: ROOM_ARGUMENT },
     },
     async ({ room }) => {
@@ -239,9 +259,11 @@ export function registerTools(
       if (!look.state.ensemble) {
         return errorReply(`No ensemble is loaded, so there is nothing to share.\n${lookReply(look)}`)
       }
-      const url = await shorten(await snapshotUrl(viewerUrl, look.state), fetch)
+      const { camera, missing } = await roomById(acting.roomId).readCamera(cameraTimeoutMs)
+      const url = await shorten(await snapshotUrl(viewerUrl, look.state, camera), fetch)
       console.log(`[mcp] get_shareable_url | Room ${acting.roomId}`)
-      return { content: [{ type: 'text' as const, text: `Shareable URL:\n${url}\n\n${lookReply(look)}` }] }
+      const note = missing === null ? '' : `\n${NO_POSE[missing]}`
+      return { content: [{ type: 'text' as const, text: `Shareable URL:\n${url}${note}\n\n${lookReply(look)}` }] }
     },
   )
 
@@ -287,6 +309,26 @@ export function registerTools(
       const read = await readSession(session, fetch)
       if (!read.ok) return refusedReply(acting.roomId, { ok: false, reason: 'refused', message: read.message })
       return change('load_session', acting.roomId, read.proposal, read.notes)
+    },
+  )
+
+  // Not a proposal: the camera is a Viewer's, so the Room tells the Viewers (ADR 0005).
+  mcpServer.registerTool(
+    'reset_camera',
+    {
+      title: 'Reset the camera',
+      description: 'Put the camera back where Spacewalk frames the whole 3D structure.',
+      inputSchema: { room: ROOM_ARGUMENT },
+    },
+    async ({ room }) => {
+      const acting = roomToActOn(room, hostRoomId)
+      if ('refusal' in acting) return acting.refusal
+      const stub = roomById(acting.roomId)
+      const before = await stub.look()
+      if (!before.ok) return refusalReply(acting.roomId, before)
+      const outcome = await stub.resetCamera(cameraTimeoutMs)
+      console.log(`[mcp] reset_camera | Room ${acting.roomId} | ${outcome}`)
+      return { content: [{ type: 'text' as const, text: `${RESET_REPLY[outcome]}\n${lookReply(before)}` }] }
     },
   )
 

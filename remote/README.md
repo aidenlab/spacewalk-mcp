@@ -34,21 +34,30 @@ const remote = attachRemote({
     return { kind: viewer.isPointCloud() ? 'point-cloud' : 'trace' }
     // or, when it cannot be drawn: return { kind, failure: 'why' } (a throw counts too)
   },
+  // The Viewer's camera owns the camera pose; the Room keeps none (ADR 0005).
+  camera: {
+    read: () => viewer.cameraPoseAndPlace(), // a reading of now, or null with nothing shown
+    follow: ({ place, camera }) => viewer.followUnlessDraggingOrElsewhere(place, camera),
+    reset: () => viewer.frame(),
+  },
   onStatus(status) {
     // 'connecting' | 'open' | 'closed' (it reconnects) | 'ended' (for good: show status.message)
   },
 })
 
 slider.oninput = () => remote.propose({ type: 'set-structure-appearance', patch: { pointOpacity } })
-controls.addEventListener('end', () => remote.propose({ type: 'set-camera', camera }))
+controls.addEventListener('start', () => remote.tookCamera())
+controls.addEventListener('end', () => remote.releasedCamera(viewer.cameraPoseAndPlace()))
 ```
 
 The Room is authoritative: the Viewer shows only what `draw` is given, and every change by hand
 is a `propose`. The library reports each version realized (drawn or failed, with the ensemble's
 kind), draws one version at a time and skips to the latest, and reconnects after a drop, when the
 Room resyncs it. A dragged change (structure appearance, viewer settings) is proposed once the
-gesture has been still for `gestureEndMs` (250 ms), its patches merged; any other change, the
-camera included, goes at once, so the Viewer proposes the camera at orbit end. While `draw` runs,
+gesture has been still for `gestureEndMs` (250 ms), its patches merged; any other change goes at
+once. The camera is not a proposal: a person's hold, release and reset go as messages of their own,
+`draw` is told of the latest load and acts on it once, and a Viewer calls `wantCamera()` after it
+frames or rejoins. While `draw` runs,
 a proposal that would change nothing in the state being drawn is the Viewer's change listeners
 echoing the Room, and is dropped; a listener that fires later is the Viewer's to quiet. On a
 protocol mismatch, an expired Room or an unknown one, the library stops and `onStatus` gets

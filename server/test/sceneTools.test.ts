@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import { readSessionString, writeSessionString, type Fetch } from '../src/session.ts'
 import { registerTools } from '../src/tools.ts'
 import type { ToolResult } from './mcp.ts'
+import { joinAndSync } from './viewer.ts'
 
 /** The network the tools see; a tool that reaches for it without a test saying so fails. */
 const noNetwork: Fetch = async (url) => {
@@ -23,6 +24,7 @@ async function connect(fetch: Fetch = noNetwork) {
     roomById: (id) => env.ROOM.getByName(id),
     hostRoomId: null,
     realizeTimeoutMs: 1000,
+    cameraTimeoutMs: 500,
     fetch,
   })
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
@@ -52,14 +54,34 @@ function text(result: ToolResult): string {
 const CAMERA = { position: { x: 1, y: 2, z: 3 }, target: { x: 0, y: 0, z: 0 } }
 
 describe('reset_camera', () => {
-  it('leaves the Viewer to frame the structure itself', async () => {
+  it('says there is no camera to reset with no Viewer open, and makes no version', async () => {
     const room = await openRoom()
-    await env.ROOM.getByName(room).propose({ type: 'set-camera', camera: CAMERA })
 
     const reply = text(await call('reset_camera', { room }))
 
-    expect(reply).toMatch(/^Applied, not shown yet — no viewer is open\. Version 2\./)
-    expect(await stateOf(room)).toMatchObject({ camera: null })
+    expect(reply).toMatch(/^No Viewer is open, so there is no camera to reset\./)
+    expect(await env.ROOM.getByName(room).read()).toMatchObject({ version: 0 })
+  })
+
+  it('tells every Viewer, and waits for the holder alone to confirm', async () => {
+    const room = await openRoom()
+    const holder = await joinAndSync(room)
+    const follower = await joinAndSync(room)
+
+    const replying = call('reset_camera', { room })
+    const asked = (await holder.next()) as { type: string; requestId: string }
+    expect(asked).toMatchObject({ type: 'reset-camera', requestId: expect.any(String) })
+    expect(await follower.next()).toEqual({ type: 'reset-camera' })
+    holder.send({ type: 'camera-reset-done', requestId: asked.requestId })
+
+    expect(text(await replying)).toMatch(/^The camera was reset/)
+    expect(await env.ROOM.getByName(room).read()).toMatchObject({ version: 0 })
+  })
+
+  it('says so when the holder does not confirm in time', async () => {
+    const room = await openRoom()
+    await joinAndSync(room)
+    expect(text(await call('reset_camera', { room }))).toMatch(/none confirmed it in time/)
   })
 })
 
@@ -199,10 +221,16 @@ describe('get_shareable_url', () => {
     await stub.propose({ type: 'select-trace', key: '12' })
     await stub.propose({ type: 'set-render-style', style: 'ribbon' })
     await stub.propose({ type: 'step-ball-radius', direction: 'up' })
-    await stub.propose({ type: 'set-camera', camera: CAMERA })
     await stub.propose({ type: 'set-viewer-settings', patch: { background: { r: 0, g: 0, b: 0 } } })
+    const viewer = await joinAndSync(room)
 
-    const { url, session, settings } = shareableUrlIn(text(await call('get_shareable_url', { room }, shortenerDown)))
+    const replying = call('get_shareable_url', { room }, shortenerDown)
+    const { requestId } = (await viewer.next()) as { requestId: string }
+    const place = { url: ENSEMBLE_URL, groupKey: 'groupB', traceKey: '12' }
+    viewer.send({ type: 'camera-answer', requestId, pose: { place, camera: CAMERA } })
+    const reply = text(await replying)
+    expect(reply).not.toContain('framed')
+    const { url, session, settings } = shareableUrlIn(reply)
 
     expect(url.origin + url.pathname).toBe('http://localhost:5173/')
     expect(url.searchParams.has('room')).toBe(false)
@@ -225,6 +253,47 @@ describe('get_shareable_url', () => {
       cameraLightingRig: { position: { x: 1, y: 2, z: 3 }, target: { tx: 0, ty: 0, tz: 0 } },
     })
     expect(await readSessionString(settings)).toEqual((await stateOf(room)).viewerSettings)
+  })
+
+  it('opens framed, and says so, when the holder answers for a place the Room has left', async () => {
+    const room = await openRoom()
+    const stub = env.ROOM.getByName(room)
+    await stub.propose({ type: 'load-ensemble', url: ENSEMBLE_URL })
+    await stub.propose({ type: 'select-trace', key: '7' })
+    const viewer = await joinAndSync(room)
+
+    const replying = call('get_shareable_url', { room }, shortenerDown)
+    const { requestId } = (await viewer.next()) as { requestId: string }
+    const place = { url: ENSEMBLE_URL, groupKey: null, traceKey: '6' }
+    viewer.send({ type: 'camera-answer', requestId, pose: { place, camera: CAMERA } })
+    const reply = text(await replying)
+
+    expect(reply).toContain('still catching up')
+    const block = (await readSessionString(shareableUrlIn(reply).session)) as Record<string, unknown>
+    expect(block).not.toHaveProperty('cameraLightingRig')
+  })
+
+  it('opens framed, and says so, when the holder does not answer in time', async () => {
+    const room = await openRoom()
+    await env.ROOM.getByName(room).propose({ type: 'load-ensemble', url: ENSEMBLE_URL })
+    await joinAndSync(room)
+    expect(text(await call('get_shareable_url', { room }, shortenerDown))).toContain('did not report its camera in time')
+  })
+
+  it('uses a loaded session\'s pose while no Viewer has drawn it', async () => {
+    const room = await openRoom()
+    const session = await writeSessionString({
+      url: ENSEMBLE_URL,
+      cameraLightingRig: { position: CAMERA.position, target: { tx: 0, ty: 0, tz: 0 } },
+    })
+    await call('load_session', { room, session })
+
+    const reply = text(await call('get_shareable_url', { room }, shortenerDown))
+
+    expect(reply).not.toContain('framed')
+    expect(await readSessionString(shareableUrlIn(reply).session)).toMatchObject({
+      cameraLightingRig: { position: CAMERA.position, target: { tx: 0, ty: 0, tz: 0 } },
+    })
   })
 
   it('writes the first trace for a Room at the default, and no group or camera', async () => {
@@ -325,7 +394,6 @@ const LOADED = {
     colorRamp: 'viridis',
     isCircular: true,
   },
-  camera: { position: { x: 1, y: 2, z: 3 }, target: { x: 4, y: 5, z: 6 } },
 }
 
 const FULL_APP = 'https://spacewalk.aidenlab.org/index.html'
@@ -424,7 +492,6 @@ describe('load_session', () => {
   it('takes each field on its own: a missing or malformed one falls back to its default', async () => {
     const room = await openRoom()
     await env.ROOM.getByName(room).propose({ type: 'step-ball-radius', direction: 'up' })
-    await env.ROOM.getByName(room).propose({ type: 'set-camera', camera: CAMERA })
     const session = await writeSessionString({
       url: ENSEMBLE_URL,
       renderStyle: 'render-style-point-cloud',
@@ -438,7 +505,6 @@ describe('load_session', () => {
       ensemble: { url: ENSEMBLE_URL, groupKey: null, traceKey: null, kind: null },
       renderStyle: 'ball-and-stick',
       structureAppearance: { ballRadiusIndex: 10, stickRadiusIndex: 5, pointOpacity: 0.375, isCircular: true },
-      camera: null,
     })
   })
 

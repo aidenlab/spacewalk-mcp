@@ -78,5 +78,4 @@ export const STATE: ViewerState = {
     groundPlane: { r: 0.5, g: 0.5, b: 0.5, visible: true },
     referenceRuler: { r: 0, g: 0, b: 0, visible: false },
   },
-  camera: null,
 }

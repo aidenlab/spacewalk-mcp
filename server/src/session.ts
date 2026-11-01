@@ -76,11 +76,12 @@ async function piped(bytes: Uint8Array<ArrayBuffer>, through: CompressionStream 
 
 /**
  * The snapshot URL of a viewer state with an ensemble: the viewer page with the session block and,
- * beside it, the viewer settings (ADR 0002). Both raw, as the full app writes its parameters.
+ * beside it, the viewer settings (ADR 0002). Both raw, as the full app writes its parameters. The
+ * camera pose is a reading from a Viewer; none means the snapshot opens framed (ADR 0005).
  */
-export async function snapshotUrl(viewerUrl: string, state: ViewerState): Promise<string> {
+export async function snapshotUrl(viewerUrl: string, state: ViewerState, camera: Camera | null): Promise<string> {
   const url = new URL(viewerUrl)
-  const session = await writeSessionString(sessionBlock(state))
+  const session = await writeSessionString(sessionBlock(state, camera))
   const settings = await writeSessionString(state.viewerSettings)
   url.search = `?spacewalkSessionURL=${session}&viewerSettings=${settings}`
   return url.toString()
@@ -91,7 +92,7 @@ export async function snapshotUrl(viewerUrl: string, state: ViewerState): Promis
  * reads those, and a snapshot opens on the viewer page. Nor has it a camera projection: Spacewalk
  * keeps the one it framed the ensemble with, and warns that it could not read the camera's.
  */
-function sessionBlock({ ensemble, renderStyle, structureAppearance, camera }: ViewerState) {
+function sessionBlock({ ensemble, renderStyle, structureAppearance }: ViewerState, camera: Camera | null) {
   return {
     url: ensemble?.url,
     // Spacewalk reads the trace with parseInt: it must be there, and the default is the first.

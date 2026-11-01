@@ -3,8 +3,11 @@ import {
   PROTOCOL_VERSION,
   Proposal,
   ViewerMessage,
+  isSamePlace,
+  type Camera,
   type EnsembleKind,
   type ErrorCode,
+  type PlacedCamera,
   type Realization,
   type RealizedMessage,
   type RoomMessage,
@@ -80,9 +83,25 @@ export interface Look extends Versioned {
   news: News[]
 }
 
-/** What a live Room stores: its current version, and the version that loaded its ensemble. */
+/**
+ * What a reading of the camera pose came to (ADR 0005). `camera` is null, for a snapshot to open
+ * framed, when `missing` says why: no Viewer is open, the holder did not answer in time or had
+ * nothing to answer with, or it answered for a place the Room has moved on from.
+ */
+export type CameraReading =
+  | { camera: Camera; missing: null }
+  | { camera: null; missing: 'no-viewer' | 'no-answer' | 'other-place' }
+
+/** How a reset came out: the holder confirmed it, did not in time, or no Viewer is open. */
+export type CameraResetOutcome = 'confirmed' | 'no-answer' | 'no-viewer'
+
+/**
+ * What a live Room stores: its current version, the version that loaded its ensemble, and that
+ * load's camera pose while no Viewer has drawn it. The Room holds no other pose (ADR 0005).
+ */
 interface Current extends Versioned {
   loadedAt: number | null
+  loadedCamera: Camera | null
 }
 
 /** What a Viewer shows when its Room has expired. */
@@ -94,9 +113,15 @@ interface Waiter {
   settled: (settled: Settled) => void
 }
 
-/** What the Room keeps on each socket, surviving hibernation. */
+/**
+ * What the Room keeps on each socket, surviving hibernation: that it joined and when, and whether
+ * it holds the camera. Kept here, the record of the holder goes with the socket. With none marked,
+ * the longest-connected Viewer holds it (ADR 0005).
+ */
 interface Attachment {
   joined: boolean
+  joinedAt: number
+  holdsCamera: boolean
 }
 
 // Storage keys. A live Room holds CURRENT, and REALIZED and FAILURES once Viewers report, and
@@ -121,6 +146,9 @@ export class Room extends DurableObject<Env> {
   /** Those waiting for a version to be realized. In memory: a wait never outlives its call. */
   private waiting: Waiter[] = []
 
+  /** Questions put to the holder, by request id. In memory: a wait never outlives its call. */
+  private asked = new Map<string, (answer: PlacedCamera | null) => void>()
+
   /**
    * Open the Room: a live Room keeps what it holds; a Room never opened starts empty at version
    * 0, and an expired one starts empty at the version after its last, so that no Viewer takes
@@ -131,7 +159,7 @@ export class Room extends DurableObject<Env> {
     if (!current) {
       const expiredAt = await this.ctx.storage.get<number>(EXPIRED)
       const version = expiredAt === undefined ? 0 : expiredAt + 1
-      current = { version, state: emptyViewerState(), loadedAt: null }
+      current = { version, state: emptyViewerState(), loadedAt: null, loadedCamera: null }
       await this.ctx.storage.delete(EXPIRED)
       await this.ctx.storage.put(CURRENT, current)
     }
@@ -171,9 +199,7 @@ export class Room extends DurableObject<Env> {
     const result = apply(current.state, parsed.data)
     if (!result.ok) return { ok: false, reason: 'refused', message: result.refusal }
     const version = current.version + 1
-    const loads = parsed.data.type === 'load-ensemble' || parsed.data.type === 'load-session'
-    const loadedAt = loads ? version : current.loadedAt
-    const next: Current = { version, state: result.state, loadedAt }
+    const next: Current = { version, state: result.state, ...afterLoad(current, parsed.data, version) }
     await this.ctx.storage.put(CURRENT, next)
     if (byHand) await this.tell({ type: 'hand', version, proposal: parsed.data })
     this.broadcast(next)
@@ -233,7 +259,115 @@ export class Room extends DurableObject<Env> {
         return this.proposeByHand(socket, message.data.proposal)
       case 'realized':
         return this.realize(message.data)
+      case 'took-camera':
+        await this.touch()
+        return this.giveCameraTo(socket)
+      case 'camera-released':
+        await this.touch()
+        this.giveCameraTo(socket)
+        return this.relay(socket, cameraMoved(message.data))
+      case 'camera-reset':
+        await this.touch()
+        this.giveCameraTo(socket)
+        await this.forgetLoadedCamera()
+        return this.relay(socket, { type: 'reset-camera' })
+      case 'want-camera': {
+        const holder = this.holder()
+        if (holder !== undefined && holder !== socket) send(holder, { type: 'share-camera' })
+        return
+      }
+      case 'camera-shared':
+        return this.relay(socket, cameraMoved(message.data))
+      case 'camera-answer':
+        return this.answered(message.data.requestId, message.data.pose)
+      case 'camera-reset-done':
+        return this.answered(message.data.requestId, null)
     }
+  }
+
+  /** Make this Viewer the one camera holder. */
+  private giveCameraTo(socket: WebSocket) {
+    for (const viewer of this.viewers()) {
+      const holdsCamera = viewer === socket
+      viewer.serializeAttachment({ ...attachmentOf(viewer), holdsCamera } satisfies Attachment)
+    }
+  }
+
+  /** The camera holder: the one marked, or else the longest-connected Viewer. */
+  private holder(): WebSocket | undefined {
+    const viewers = this.viewers()
+    return (
+      viewers.find((viewer) => attachmentOf(viewer).holdsCamera) ??
+      viewers.toSorted((a, b) => attachmentOf(a).joinedAt - attachmentOf(b).joinedAt)[0]
+    )
+  }
+
+  /** Send a message to every Viewer but the one it came from. */
+  private relay(from: WebSocket, message: RoomMessage) {
+    for (const viewer of this.viewers()) {
+      if (viewer !== from) send(viewer, message)
+    }
+  }
+
+  /** Forget a load's undelivered pose: the camera has moved on from it. */
+  private async forgetLoadedCamera() {
+    const current = await this.ctx.storage.get<Current>(CURRENT)
+    if (current?.loadedCamera) await this.ctx.storage.put(CURRENT, { ...current, loadedCamera: null })
+  }
+
+  /** Answer the question put to the holder under this id, if it is still waiting. */
+  private answered(requestId: string, pose: PlacedCamera | null) {
+    this.asked.get(requestId)?.(pose)
+  }
+
+  /** Put a question to the holder and wait for its answer, or undefined after `timeoutMs`. */
+  private ask(
+    message: (requestId: string) => RoomMessage,
+    holder: WebSocket,
+    timeoutMs: number,
+  ): Promise<PlacedCamera | null | undefined> {
+    const requestId = crypto.randomUUID()
+    return new Promise((resolve) => {
+      const done = (answer: PlacedCamera | null | undefined) => {
+        clearTimeout(timeout)
+        this.asked.delete(requestId)
+        resolve(answer)
+      }
+      const timeout = setTimeout(() => done(undefined), timeoutMs)
+      this.asked.set(requestId, done)
+      send(holder, message(requestId))
+    })
+  }
+
+  /**
+   * The camera pose for a snapshot of the place the Room shows now: a load's pose no Viewer has
+   * drawn yet, or else a reading from the holder, taken now and kept by nobody (ADR 0005).
+   */
+  async readCamera(timeoutMs: number): Promise<CameraReading> {
+    const current = await this.live()
+    if (!current.ok) return { camera: null, missing: 'no-viewer' }
+    await this.touch()
+    if (current.loadedCamera) return { camera: current.loadedCamera, missing: null }
+    const holder = this.holder()
+    if (holder === undefined) return { camera: null, missing: 'no-viewer' }
+    const pose = await this.ask((requestId) => ({ type: 'ask-camera', requestId }), holder, timeoutMs)
+    if (!pose) return { camera: null, missing: 'no-answer' }
+    // The Room may have moved on while it asked.
+    const latest = await this.live()
+    const ensemble = latest.ok ? latest.state.ensemble : null
+    if (!ensemble || !isSamePlace(pose.place, ensemble)) return { camera: null, missing: 'other-place' }
+    return { camera: pose.camera, missing: null }
+  }
+
+  /** Have every Viewer frame the structure, and wait for the holder to confirm. */
+  async resetCamera(timeoutMs: number): Promise<CameraResetOutcome> {
+    await this.touch()
+    await this.forgetLoadedCamera()
+    const holder = this.holder()
+    if (holder === undefined) return 'no-viewer'
+    this.relay(holder, { type: 'reset-camera' })
+    const confirmed = await this.ask((requestId) => ({ type: 'reset-camera', requestId }), holder, timeoutMs)
+    return confirmed === undefined ? 'no-answer' : 'confirmed'
   }
 
   /** A Viewer joins: it gets the current version, as every resync does. */
@@ -241,12 +375,13 @@ export class Room extends DurableObject<Env> {
     if (protocol !== PROTOCOL_VERSION) {
       return refuse(socket, 'protocol-mismatch', 'This viewer is out of date: reload the viewer.')
     }
-    const current = await this.read()
-    if (current.ok) {
-      socket.serializeAttachment({ joined: true } satisfies Attachment)
-      return socket.send(stateMessage(current))
+    const current = await this.live()
+    if (!current.ok) return this.refuseGone(socket, current.reason)
+    await this.touch()
+    if (!hasJoined(socket)) {
+      socket.serializeAttachment({ joined: true, joinedAt: Date.now(), holdsCamera: false } satisfies Attachment)
     }
-    this.refuseGone(socket, current.reason)
+    socket.send(stateMessage(current))
   }
 
   /**
@@ -264,7 +399,11 @@ export class Room extends DurableObject<Env> {
    */
   private async proposeByHand(socket: WebSocket, proposal: Proposal) {
     const result = await this.applyProposal(proposal, true)
-    if (result.ok) return
+    if (result.ok) {
+      // A person who steps to another trace has the framing everyone now follows.
+      if (proposal.type === 'select-trace' || proposal.type === 'select-ensemble-group') this.giveCameraTo(socket)
+      return
+    }
     if (result.reason !== 'refused') return this.refuseGone(socket, result.reason)
     send(socket, { type: 'error', code: 'proposal-refused', message: result.message })
     await this.resync(socket)
@@ -272,8 +411,10 @@ export class Room extends DurableObject<Env> {
 
   /** Send a joined Viewer the current version, putting back whatever it has changed by hand. */
   private async resync(socket: WebSocket) {
-    const current = await this.read()
-    if (current.ok) socket.send(stateMessage(current))
+    const current = await this.live()
+    if (!current.ok) return
+    await this.touch()
+    socket.send(stateMessage(current))
   }
 
   /**
@@ -285,6 +426,11 @@ export class Room extends DurableObject<Env> {
   private async realize({ version, kind, result }: RealizedMessage) {
     const current = await this.live()
     if (!current.ok || version > current.version) return
+
+    // A Viewer has drawn the load, so its pose now lives in that Viewer's rig (ADR 0005).
+    if (result.outcome === 'drawn' && current.loadedAt !== null && version >= current.loadedAt) {
+      await this.forgetLoadedCamera()
+    }
 
     const latest = await this.latestRealized()
     if (latest === null || version > latest.version) {
@@ -346,6 +492,12 @@ export class Room extends DurableObject<Env> {
   async webSocketClose(socket: WebSocket) {
     const others = this.viewers().filter((viewer) => viewer !== socket)
     if (others.length === 0) this.answer({ outcome: 'no-viewer' })
+    // Answer the close, so the socket leaves the Room and cannot be taken for the camera holder.
+    try {
+      socket.close()
+    } catch {
+      // Already closed.
+    }
   }
 
   /**
@@ -415,8 +567,8 @@ export class Room extends DurableObject<Env> {
   }
 
   /** Send a version to every Viewer in the Room. */
-  private broadcast({ version, state }: Versioned) {
-    const message = stateMessage({ version, state })
+  private broadcast(current: Current) {
+    const message = stateMessage(current)
     for (const socket of this.viewers()) socket.send(message)
   }
 
@@ -431,9 +583,31 @@ function versioned({ version, state }: Versioned): Result {
   return { ok: true, version, state }
 }
 
+/** What a proposal makes of the record of the latest load (ADR 0005). */
+function afterLoad(current: Current, proposal: Proposal, version: number): Pick<Current, 'loadedAt' | 'loadedCamera'> {
+  switch (proposal.type) {
+    case 'load-ensemble':
+      return { loadedAt: version, loadedCamera: null }
+    case 'load-session':
+      return { loadedAt: version, loadedCamera: proposal.camera }
+    case 'select-trace':
+    case 'select-ensemble-group':
+      // A pose means nothing in any other place.
+      return { loadedAt: current.loadedAt, loadedCamera: null }
+    default:
+      return { loadedAt: current.loadedAt, loadedCamera: current.loadedCamera }
+  }
+}
+
 /** A version as the message that tells a Viewer about it. */
-function stateMessage({ version, state }: Versioned): string {
-  return JSON.stringify({ type: 'state', version, state } satisfies StateMessage)
+function stateMessage({ version, state, loadedAt, loadedCamera }: Current): string {
+  const loaded = loadedAt === null ? null : { version: loadedAt, camera: loadedCamera ?? null }
+  return JSON.stringify({ type: 'state', version, state, loaded } satisfies StateMessage)
+}
+
+/** A Viewer's pose as the message that tells the others. */
+function cameraMoved({ place, camera }: PlacedCamera): RoomMessage {
+  return { type: 'camera-moved', place, camera }
 }
 
 /** Tell a Viewer why the Room will not have it, and let it go. */
@@ -444,6 +618,11 @@ function refuse(socket: WebSocket, code: ErrorCode, message: string) {
 
 function send(socket: WebSocket, message: RoomMessage) {
   socket.send(JSON.stringify(message))
+}
+
+/** What the Room keeps on a joined socket. */
+function attachmentOf(socket: WebSocket): Attachment {
+  return socket.deserializeAttachment() as Attachment
 }
 
 /** Whether a socket has joined the Room. */

@@ -10,7 +10,7 @@ import { z } from 'zod'
  * The protocol version. A Viewer sends it when it joins, and a Room refuses a Viewer that
  * speaks another one. Bump it on any change a Viewer and a Room could not both survive.
  */
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /** A color as Spacewalk's viewer settings hold it: three.js linear-space components in [0, 1]. */
 export const Color = z.object({
@@ -81,20 +81,36 @@ export type ViewerSettings = z.infer<typeof ViewerSettings>
 
 const Point = z.object({ x: z.number(), y: z.number(), z: z.number() })
 
-/** Where the camera is and what it looks at. */
+/** A camera pose: where the camera is and what it looks at. A Viewer's rig owns it (ADR 0005). */
 export const Camera = z.object({ position: Point, target: Point })
 export type Camera = z.infer<typeof Camera>
 
+/** A place in an ensemble. A null trace key means the ensemble's first trace. */
+export const Place = z.object({
+  url: z.string(),
+  groupKey: z.string().nullable(),
+  traceKey: z.string().nullable(),
+})
+export type Place = z.infer<typeof Place>
+
+/** Whether two places are one, a null trace key being the first trace. */
+export function isSamePlace(a: Place, b: Place): boolean {
+  return a.url === b.url && a.groupKey === b.groupKey && (a.traceKey ?? '0') === (b.traceKey ?? '0')
+}
+
+/** A camera pose and the place it was read in: it means nothing in any other (ADR 0005). */
+export const PlacedCamera = z.object({ place: Place, camera: Camera })
+export type PlacedCamera = z.infer<typeof PlacedCamera>
+
 /**
  * The viewer state: the Room's one record of what its Viewers show (ADR 0001). No ensemble means
- * nothing is loaded; no camera means the Viewer frames the structure itself.
+ * nothing is loaded. It holds no camera pose (ADR 0005).
  */
 export const ViewerState = z.object({
   ensemble: Ensemble.nullable(),
   renderStyle: RenderStyle,
   structureAppearance: StructureAppearance,
   viewerSettings: ViewerSettings,
-  camera: Camera.nullable(),
 })
 export type ViewerState = z.infer<typeof ViewerState>
 
@@ -133,8 +149,6 @@ export const Proposal = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('set-viewer-settings'), patch: ViewerSettingsPatch }),
   z.object({ type: z.literal('adjust-background'), direction: BackgroundDirection }),
-  z.object({ type: z.literal('set-camera'), camera: Camera }),
-  z.object({ type: z.literal('reset-camera') }),
   // A session, whole: one proposal, so that a Viewer draws it once. Viewer settings are only those
   // the session carries, beside it (ADR 0002).
   z.object({
@@ -182,11 +196,49 @@ export const RealizedMessage = z.object({
 })
 export type RealizedMessage = z.infer<typeof RealizedMessage>
 
+/**
+ * Viewer → Room, on the camera (ADR 0005). A person took hold of this Viewer's camera, which makes
+ * it the camera holder.
+ */
+export const TookCameraMessage = z.object({ type: z.literal('took-camera') })
+
+/** Viewer → Room: a person let go of the camera here. This Viewer is the holder; the Room relays it. */
+export const CameraReleasedMessage = PlacedCamera.extend({ type: z.literal('camera-released') })
+
+/** Viewer → Room: a person reset the camera here. This Viewer is the holder; the Room relays it. */
+export const CameraResetMessage = z.object({ type: z.literal('camera-reset') })
+
+/** Viewer → Room: this Viewer has just framed or joined, and wants the holder's pose, if another holds it. */
+export const WantCameraMessage = z.object({ type: z.literal('want-camera') })
+
+/** Viewer → Room: the holder's pose, for the Room to relay to whoever wanted it. No change of holder. */
+export const CameraSharedMessage = PlacedCamera.extend({ type: z.literal('camera-shared') })
+
+/** Viewer → Room: the answer to `ask-camera`, a reading of this moment; null with nothing shown. */
+export const CameraAnswerMessage = z.object({
+  type: z.literal('camera-answer'),
+  requestId: z.string(),
+  pose: PlacedCamera.nullable(),
+})
+
+/** Viewer → Room: the holder has done the reset the Room asked for. */
+export const CameraResetDoneMessage = z.object({
+  type: z.literal('camera-reset-done'),
+  requestId: z.string(),
+})
+
 /** Every message a Viewer sends a Room. */
 export const ViewerMessage = z.discriminatedUnion('type', [
   JoinMessage,
   ProposeMessage,
   RealizedMessage,
+  TookCameraMessage,
+  CameraReleasedMessage,
+  CameraResetMessage,
+  WantCameraMessage,
+  CameraSharedMessage,
+  CameraAnswerMessage,
+  CameraResetDoneMessage,
 ])
 export type ViewerMessage = z.infer<typeof ViewerMessage>
 
@@ -216,14 +268,47 @@ export const ErrorMessage = z.object({
 })
 export type ErrorMessage = z.infer<typeof ErrorMessage>
 
+/**
+ * The latest load of an ensemble or a session: its version, and the session's camera pose while
+ * no Viewer has drawn it (ADR 0005). A Viewer acts on each load once.
+ */
+export const Loaded = z.object({
+  version: z.int().nonnegative(),
+  camera: Camera.nullable(),
+})
+export type Loaded = z.infer<typeof Loaded>
+
 /** Room → Viewer: the viewer state at a version, broadcast to every Viewer after each change. */
 export const StateMessage = z.object({
   type: z.literal('state'),
   version: z.int().nonnegative(),
   state: ViewerState,
+  loaded: Loaded.nullable(),
 })
 export type StateMessage = z.infer<typeof StateMessage>
 
+/** Room → Viewer: another Viewer's camera pose, to follow if this Viewer shows that place. */
+export const CameraMovedMessage = PlacedCamera.extend({ type: z.literal('camera-moved') })
+
+/** Room → holder: read your camera now and answer. */
+export const AskCameraMessage = z.object({ type: z.literal('ask-camera'), requestId: z.string() })
+
+/** Room → holder: another Viewer wants your pose; share it. */
+export const ShareCameraMessage = z.object({ type: z.literal('share-camera') })
+
+/** Room → Viewer: frame the structure. With a request id this Viewer holds the camera, and confirms. */
+export const ResetCameraMessage = z.object({
+  type: z.literal('reset-camera'),
+  requestId: z.string().optional(),
+})
+
 /** Every message a Room sends a Viewer. */
-export const RoomMessage = z.discriminatedUnion('type', [ErrorMessage, StateMessage])
+export const RoomMessage = z.discriminatedUnion('type', [
+  ErrorMessage,
+  StateMessage,
+  CameraMovedMessage,
+  AskCameraMessage,
+  ShareCameraMessage,
+  ResetCameraMessage,
+])
 export type RoomMessage = z.infer<typeof RoomMessage>

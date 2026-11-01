@@ -2,13 +2,16 @@
  * `attachRemote`: connects a Viewer to its Room over `/ws?room=`. The Room is authoritative
  * (ADR 0001): the Viewer draws every viewer state the Room broadcasts, proposes hand changes,
  * and reports each version realized. How to draw is the Viewer's own: it passes `draw`, and the
- * library never touches the scene or the DOM.
+ * library never touches the scene or the DOM. The camera is the one thing the Room does not hold
+ * (ADR 0005): the Viewer passes `camera`, its rig answers, and the library only carries messages.
  */
 import {
   PROTOCOL_VERSION,
   RoomMessage,
   type EnsembleKind,
   type ErrorCode,
+  type Loaded,
+  type PlacedCamera,
   type Proposal,
   type RealizedMessage,
   type StateMessage,
@@ -43,9 +46,11 @@ export interface AttachOptions {
   /**
    * Draw the viewer state at `version`. Resolve when it is drawn, or failed: a throw is a failure
    * too. Every state the Room sends is drawn, the same version again on a resync, so the Viewer
-   * puts back what it shows by hand.
+   * puts back what it shows by hand. `loaded` is the latest load, which the Viewer acts on once.
    */
-  draw(state: ViewerState, version: number): Drawing | Promise<Drawing>
+  draw(state: ViewerState, version: number, loaded: Loaded | null): Drawing | Promise<Drawing>
+  /** The Viewer's camera, which owns the camera pose. */
+  camera: CameraPort
   /** Told how the connection stands; see `Status`. */
   onStatus?(status: Status): void
   /**
@@ -55,6 +60,16 @@ export interface AttachOptions {
   gestureEndMs?: number
   /** Defaults to the platform WebSocket. */
   createSocket?(url: string): Socket
+}
+
+/** What the library needs of the Viewer's camera. */
+export interface CameraPort {
+  /** The camera pose now and the place it is in; null with nothing shown. Never a stored copy. */
+  read(): PlacedCamera | null
+  /** Another Viewer's pose: follow it, unless it is for another place or a person is dragging. */
+  follow(pose: PlacedCamera): void
+  /** Frame the structure, unless a person is dragging. */
+  reset(): void
 }
 
 /**
@@ -82,13 +97,20 @@ export interface Remote {
   /**
    * Offer a hand change for the Room to apply. A dragged change, to structure appearance or viewer
    * settings, waits for the gesture to end and goes as one, the patches merged; any other goes at
-   * once, after whatever dragged change is waiting. The Viewer proposes the camera at orbit end,
-   * not on every frame of it. While a state is being drawn, a proposal that would change nothing
+   * once, after whatever dragged change is waiting. While a state is being drawn, a proposal that would change nothing
    * in it is the Viewer's change listeners echoing the Room's change, and is dropped; a listener
    * that fires after `draw` resolves is the Viewer's to quiet. Dropped while disconnected, since
    * the resync on rejoining wins.
    */
   propose(proposal: Proposal): void
+  /** A person took hold of the camera: this Viewer is now the camera holder. */
+  tookCamera(): void
+  /** A person let go of the camera, in this place: others follow it. */
+  releasedCamera(pose: PlacedCamera): void
+  /** A person reset the camera: others frame too. */
+  resetCamera(): void
+  /** This Viewer has just framed or joined: ask for the holder's pose, if another holds it. */
+  wantCamera(): void
   /** Close the connection for good: no reconnect, and no further calls to the Viewer. */
   detach(): void
 }
@@ -102,7 +124,7 @@ const MAX_RECONNECT_DELAY_MS = 5000
 
 /** Attach a Viewer to its Room. Throws at once if `url` is not an absolute URL. */
 export function attachRemote(options: AttachOptions): Remote {
-  const { draw, onStatus, gestureEndMs = GESTURE_END_MS } = options
+  const { draw, camera, onStatus, gestureEndMs = GESTURE_END_MS } = options
   const url = new URL(options.url)
   url.searchParams.set('room', options.room)
   const createSocket = options.createSocket ?? ((url: string) => new WebSocket(url) as unknown as Socket)
@@ -126,10 +148,27 @@ export function attachRemote(options: AttachOptions): Remote {
       if (current !== socket) return
       const message = parseRoomMessage(event.data)
       if (message === null) return
-      if (message.type === 'state') return receive(message)
-      if (isEndReason(message.code)) end(message.code)
-      // A refused hand change, or a message the Room did not know: the resync that follows
-      // puts the Viewer right.
+      switch (message.type) {
+        case 'state':
+          return receive(message)
+        case 'camera-moved':
+          return camera.follow({ place: message.place, camera: message.camera })
+        case 'ask-camera':
+          return void send({ type: 'camera-answer', requestId: message.requestId, pose: camera.read() })
+        case 'share-camera': {
+          const pose = camera.read()
+          if (pose !== null) send({ type: 'camera-shared', ...pose })
+          return
+        }
+        case 'reset-camera':
+          camera.reset()
+          if (message.requestId !== undefined) send({ type: 'camera-reset-done', requestId: message.requestId })
+          return
+        case 'error':
+          if (isEndReason(message.code)) end(message.code)
+        // A refused hand change, or a message the Room did not know: the resync that follows
+        // puts the Viewer right.
+      }
     }
     // A close event follows every error.
     current.onerror = () => {}
@@ -160,17 +199,17 @@ export function attachRemote(options: AttachOptions): Remote {
 
   async function realizeAll() {
     while (next !== null && !detached) {
-      const { state, version } = next
+      const { state, version, loaded } = next
       next = null
       drawing = state
-      await realize(state, version)
+      await realize(state, version, loaded)
     }
     drawing = null
   }
 
   /** Draw a version and report it realized: drawn, or failed. */
-  async function realize(state: ViewerState, version: number) {
-    const drawn = await tryDraw(state, version)
+  async function realize(state: ViewerState, version: number, loaded: Loaded | null) {
+    const drawn = await tryDraw(state, version, loaded)
     const realized: RealizedMessage = {
       type: 'realized',
       version,
@@ -184,9 +223,9 @@ export function attachRemote(options: AttachOptions): Remote {
   }
 
   /** How the Viewer's `draw` went, a throw counted as a failure. */
-  async function tryDraw(state: ViewerState, version: number): Promise<Drawing> {
+  async function tryDraw(state: ViewerState, version: number, loaded: Loaded | null): Promise<Drawing> {
     try {
-      return await draw(state, version)
+      return await draw(state, version, loaded)
     } catch (error) {
       return { kind: null, failure: error instanceof Error ? error.message : String(error) }
     }
@@ -243,7 +282,14 @@ export function attachRemote(options: AttachOptions): Remote {
   }
 
   connect()
-  return { propose, detach: stop }
+  return {
+    propose,
+    tookCamera: () => void send({ type: 'took-camera' }),
+    releasedCamera: (pose) => void send({ type: 'camera-released', ...pose }),
+    resetCamera: () => void send({ type: 'camera-reset' }),
+    wantCamera: () => void send({ type: 'want-camera' }),
+    detach: stop,
+  }
 }
 
 /** A change a person makes by dragging: it waits for the gesture to end. */
@@ -290,8 +336,6 @@ function changesNothing(proposal: Proposal, state: ViewerState): boolean {
       return within(proposal.patch, state.structureAppearance)
     case 'set-viewer-settings':
       return within(proposal.patch, state.viewerSettings)
-    case 'set-camera':
-      return state.camera !== null && within(proposal.camera, state.camera)
     default:
       return false
   }

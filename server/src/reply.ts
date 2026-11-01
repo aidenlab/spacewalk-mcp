@@ -90,9 +90,6 @@ function untold(look: Look, version: number, settled: Settled): Look {
   return { ...rest, news: look.news.toSpliced(told, 1) }
 }
 
-/** Every camera move phrases the same, and all of them collapse into one. */
-const CAMERA_MOVED = 'the camera was moved'
-
 /**
  * The changes the model did not cause, oldest first, as one line of plain phrases: "switched to
  * ribbon; stepped to trace 12". Empty when there are none.
@@ -100,10 +97,7 @@ const CAMERA_MOVED = 'the camera was moved'
 export function phraseNews(news: News[]): string {
   const phrases: string[] = []
   for (const item of news) {
-    for (const phrase of phraseItem(item)) {
-      if (phrase === CAMERA_MOVED && phrases.includes(CAMERA_MOVED)) continue
-      phrases.push(phrase)
-    }
+    phrases.push(...phraseItem(item))
   }
   return phrases.join('; ')
 }
@@ -142,12 +136,11 @@ function phraseProposal(proposal: Proposal): string[] {
     }
     case 'adjust-background':
       return [`made the background ${proposal.direction}`]
-    case 'set-camera':
-      return [CAMERA_MOVED]
-    case 'reset-camera':
-      return ['reset the camera']
     case 'load-session':
       return [`loaded a session of the ensemble ${proposal.ensemble.url}`]
+    default:
+      // News a Room stored before the camera left the proposals (ADR 0005).
+      return []
   }
 }
 
