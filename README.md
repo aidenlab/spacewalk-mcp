@@ -33,10 +33,26 @@ npm run test:run
 
 ## Deploying
 
+Nothing deploys from CI. Both stacks need a Cloudflare login that can reach the `3dg.io` zone and a `spacewalk` checkout next to this one (or `SPACEWALK_DIR`).
+
+| Stack      | Worker                                                  | Viewer page (Pages project)                                          | Deployed from  |
+| ---------- | ------------------------------------------------------- | -------------------------------------------------------------------- | -------------- |
+| dev        | `spacewalk-mcp-dev` at `https://spacewalk-mcp-dev.3dg.io` | `spacewalk-viewer-dev` at `https://spacewalk-viewer-dev.pages.dev/viewer.html` | working trees  |
+| production | `spacewalk-mcp` at `https://spacewalk-mcp.3dg.io`         | `spacewalk-viewer` at `https://spacewalk-viewer.pages.dev/viewer.html`         | a release tag  |
+
 ```sh
-scripts/deploy-wizard.sh
+scripts/deploy-dev.sh [worker|viewer|all]   # test, deploy to dev, check the result
+scripts/deploy-wizard.sh                    # the same for dev, then connect and check each Host, step by step
 ```
 
-The [deploy wizard](scripts/deploy-wizard.sh) deploys the dev environment (the Worker `spacewalk-mcp-dev` and the Pages project `spacewalk-viewer-dev`) and walks you through connecting Claude desktop, claude.ai, ChatGPT desktop and ChatGPT web. It is re-runnable.
+To release, tag `main` in both repos with the same name, push both tags and deploy that tag:
+
+```sh
+git tag prod-2026-11-01 && git push origin prod-2026-11-01                                  # here
+git -C ../spacewalk tag prod-2026-11-01 && git -C ../spacewalk push origin prod-2026-11-01  # and in spacewalk
+scripts/deploy-prod.sh prod-2026-11-01
+```
+
+`deploy-prod.sh` tests and deploys from throwaway worktrees at the tag, so uncommitted changes never ship. A second release on a day is `prod-2026-11-01.1`. To roll back, deploy an earlier tag. The first release also creates the Worker, the Pages project and the secret. The connector URL to give Claude or ChatGPT is the Worker's address plus `/mcp`.
 
 [`docs/dev-check.md`](docs/dev-check.md) is the cheat sheet for `scripts/dev-check.mjs`, which calls one tool on the dev Worker from the terminal: a smoke test without a Host.
