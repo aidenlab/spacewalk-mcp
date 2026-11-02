@@ -70,4 +70,4 @@ git tag v0.3.0 6586971 && git push origin v0.3.0
 - **On npmjs.com**, under the package's **Settings** → **Trusted Publisher** → **GitHub Actions**: organization `aidenlab`, repository `spacewalk-mcp`, workflow `publish-remote.yml`, environment `npm`. Once that works, set **Publishing access** to require two-factor authentication and disallow tokens.
 - **On GitHub**, under `spacewalk-mcp` → **Settings** → **Environments**: an environment named `npm` with at least one required reviewer.
 
-As of November 2, 2026, neither has been confirmed. Until both are, publish by hand.
+Both were set up on November 2, 2026. No publish has gone through the workflow yet, so the first `v` release after that is the test. If its publish step gets a 403 or 404 from npm, one of the four Trusted Publisher fields doesn't match.
