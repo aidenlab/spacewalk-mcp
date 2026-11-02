@@ -140,8 +140,8 @@ const OPEN = 1
 
 const GESTURE_END_MS = 250
 
-/** The wait between highlight sends where there is no animation frame to wait for. */
-const HIGHLIGHT_INTERVAL_MS = 33
+/** A frame's time, where there is no animation frame to wait for. */
+const FRAME_FALLBACK_MS = 33
 
 /** The wait before reconnecting grows a second each attempt, to this most. */
 const MAX_RECONNECT_DELAY_MS = 5000
@@ -271,6 +271,7 @@ export function attachRemote(options: AttachOptions): Remote {
     dragged = null
     cancelHighlightTick()
     pendingHighlight = null
+    highlightTicking = false
     const current = socket
     socket = null
     current?.close()
@@ -354,7 +355,7 @@ function afterFrame(then: () => void): () => void {
     const frame = requestAnimationFrame(() => then())
     return () => cancelAnimationFrame(frame)
   }
-  const timer = setTimeout(then, HIGHLIGHT_INTERVAL_MS)
+  const timer = setTimeout(then, FRAME_FALLBACK_MS)
   return () => clearTimeout(timer)
 }
 

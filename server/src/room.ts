@@ -125,8 +125,8 @@ interface Attachment {
   joined: boolean
   joinedAt: number
   holdsCamera: boolean
-  /** Set while this Viewer's highlight is the one shown; absent on a socket that joined before it. */
-  highlighted?: Place | null
+  /** The place of this Viewer's highlight while it is the one shown; absent on a socket that joined before it. */
+  highlightPlace?: Place | null
 }
 
 // Storage keys. A live Room holds CURRENT, and REALIZED and FAILURES once Viewers report, and
@@ -292,10 +292,10 @@ export class Room extends DurableObject<Env> {
     for (const viewer of this.viewers()) {
       const attachment = attachmentOf(viewer)
       if (viewer === socket) {
-        viewer.serializeAttachment({ ...attachment, highlighted: pointing ? place : null } satisfies Attachment)
-      } else if (pointing && attachment.highlighted) {
+        viewer.serializeAttachment({ ...attachment, highlightPlace: pointing ? place : null } satisfies Attachment)
+      } else if (pointing && attachment.highlightPlace) {
         // Another Viewer's highlight now shows in place of this one's.
-        viewer.serializeAttachment({ ...attachment, highlighted: null } satisfies Attachment)
+        viewer.serializeAttachment({ ...attachment, highlightPlace: null } satisfies Attachment)
       }
     }
     this.relay(socket, { type: 'highlight-moved', place, selection })
@@ -399,7 +399,7 @@ export class Room extends DurableObject<Env> {
         joined: true,
         joinedAt: Date.now(),
         holdsCamera: false,
-        highlighted: null,
+        highlightPlace: null,
       } satisfies Attachment)
     }
     socket.send(stateMessage(current))
@@ -514,8 +514,8 @@ export class Room extends DurableObject<Env> {
     const others = this.viewers().filter((viewer) => viewer !== socket)
     if (others.length === 0) this.answer({ outcome: 'no-viewer' })
     // Its highlight would otherwise stay up on every other screen.
-    const highlighted = hasJoined(socket) ? attachmentOf(socket).highlighted : null
-    if (highlighted) this.relay(socket, { type: 'highlight-moved', place: highlighted, selection: [] })
+    const highlightPlace = hasJoined(socket) ? attachmentOf(socket).highlightPlace : null
+    if (highlightPlace) this.relay(socket, { type: 'highlight-moved', place: highlightPlace, selection: [] })
     // Answer the close, so the socket leaves the Room and cannot be taken for the camera holder.
     try {
       socket.close()
