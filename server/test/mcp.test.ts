@@ -167,7 +167,7 @@ describe('open_viewer given a room', () => {
     expect(await stub.read()).toMatchObject({ ok: true, state: { renderStyle: 'ball-and-stick' } })
   })
 
-  it('opens a Room never opened, empty, and returns its link', async () => {
+  it('opens a Room never opened, empty, and returns its link, read as a model may write it', async () => {
     const result = await callTool('open_viewer', { room: '3k9mzq7wcd' })
 
     expect(result.isError).toBeFalsy()

@@ -77,7 +77,7 @@ const OPEN_ROOM_ARGUMENT = z
   .string()
   .optional()
   .describe(
-    'Only when Spacewalk was already opened in this conversation: the Room id from that reply of open_viewer, to get the same Room back. Leave it out the first time: Spacewalk then opens in a new Room, empty. A well-formed Room id never opened before opens that Room, empty.',
+    'The Room id to open: the one from an earlier reply of open_viewer in this conversation, to get the same Room back, or one you were given to open Spacewalk in. Leave it out otherwise: Spacewalk then opens in a new Room, empty. A Room id never opened before opens that Room, empty.',
   )
 
 function errorReply(text: string) {
