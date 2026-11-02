@@ -240,19 +240,20 @@ export function registerTools(
     },
   )
 
-  // Not a change, and not a look: a Workspace polls this, so it must leave the news for the model.
+  // Not a change, and not a look: a Connector polls this to show whether a Viewer is open, so it
+  // must leave the news for the model.
   mcpServer.registerTool(
     'read_viewer_count',
     {
       title: 'Count the connected Viewers',
       description:
-        'A connection check: how many Viewers have joined the Room, and nothing else. It changes nothing and does not count as reading the Room, so what changed is still told by the next read_viewer_state. To learn what Spacewalk shows, call read_viewer_state. An error only when the Room is unknown or expired.',
+        'A connection check: how many Viewers have joined the Room, and nothing else. It changes nothing, and leaves what changed for the next read_viewer_state to tell. To learn what Spacewalk shows, call read_viewer_state. An error only when the Room is unknown or expired.',
       inputSchema: { room: ROOM_ARGUMENT },
     },
     async ({ room }) => {
       const acting = roomToActOn(room, hostRoomId)
       if ('refusal' in acting) return acting.refusal
-      const count = await roomById(acting.roomId).count()
+      const count = await roomById(acting.roomId).viewerCount()
       if (!count.ok) return refusalReply(acting.roomId, count)
       return {
         content: [{ type: 'text' as const, text: `Viewers connected: ${count.viewers}.` }],
