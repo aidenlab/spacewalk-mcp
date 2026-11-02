@@ -167,15 +167,17 @@ describe('open_viewer given a room', () => {
     expect(await stub.read()).toMatchObject({ ok: true, state: { renderStyle: 'ball-and-stick' } })
   })
 
-  it('refuses a Room never opened, with no link, and opens nothing', async () => {
-    const result = await callTool('open_viewer', { room: '3K9MZQ7WCD' })
+  it('opens a Room never opened, empty, and returns its link', async () => {
+    const result = await callTool('open_viewer', { room: '3k9mzq7wcd' })
 
-    expect(result.isError).toBe(true)
-    expect(result.content).toHaveLength(1)
-    expect(result.content[0].text).toBe(
-      'Error: No Room 3K9MZQ7WCD was ever opened. Check the Room id against the reply of open_viewer, or call open_viewer without room to open a new Room.',
-    )
-    expect(await env.ROOM.getByName('3K9MZQ7WCD').read()).toMatchObject({ ok: false, reason: 'room-unknown' })
+    expect(result.isError).toBeFalsy()
+    expect(result.structuredContent).toEqual({ room: '3K9MZQ7WCD', roomLink: roomLinkFor('3K9MZQ7WCD') })
+    expect(result.content[1].uri).toBe(roomLinkFor('3K9MZQ7WCD'))
+    expect(await env.ROOM.getByName('3K9MZQ7WCD').read()).toMatchObject({
+      ok: true,
+      version: 0,
+      state: { ensemble: null },
+    })
   })
 
   it('refuses a room that is not a Room id, with no link', async () => {

@@ -73,11 +73,11 @@ const ROOM_ARGUMENT = z
   .describe('The Room id Spacewalk was opened with, as given in the reply of open_viewer. Pass it on every call.')
 
 /** `open_viewer`'s own `room`: the first time there is none to pass. */
-const REOPEN_ROOM_ARGUMENT = z
+const OPEN_ROOM_ARGUMENT = z
   .string()
   .optional()
   .describe(
-    'Only when Spacewalk was already opened in this conversation: the Room id from that reply of open_viewer, to get the same Room back. Leave it out the first time: Spacewalk then opens in a new Room, empty. A Room id that was never opened is refused.',
+    'Only when Spacewalk was already opened in this conversation: the Room id from that reply of open_viewer, to get the same Room back. Leave it out the first time: Spacewalk then opens in a new Room, empty. A well-formed Room id never opened before opens that Room, empty.',
   )
 
 function errorReply(text: string) {
@@ -163,21 +163,19 @@ export function registerTools(
       title: 'Open Spacewalk',
       description:
         'Get the Room link that opens Spacewalk, a 3D viewer of chromatin structure, connected to a Room. Use this when the user asks to open Spacewalk or a 3D chromatin viewer, or says things like "open Spacewalk" or "show me the structure". A card is shown to the user with an Open Spacewalk button. If, and only if, you have the built-in browser of the Claude desktop app (the browser panel beside the conversation), open the Room link in it right away. Never use Claude in Chrome or any other browser tool for this. Do not repeat the link or the Room id in your reply. The result of this tool names the Room id: pass it as room on every later Spacewalk tool call in this conversation. A Room unused for a day expires; calling this again with its room starts it over, empty.',
-      inputSchema: { room: REOPEN_ROOM_ARGUMENT },
+      inputSchema: { room: OPEN_ROOM_ARGUMENT },
       _meta: JOIN_CARD_TOOL_META,
     },
     async ({ room }) => {
       const given = givenRoomId(room)
       if (given !== null && typeof given === 'object') return given.refusal
-      // A live Room keeps what it holds; an expired one starts empty. A room the model gives must
-      // have been opened before, but the Host's own Room and a new one need not.
+      // A live Room keeps what it holds; an expired one starts empty, as does one never opened. A
+      // given id need not have been opened here before: a Connector composing several Upstreams
+      // mints the Room id itself and passes it to each. Only the other tools refuse a Room never
+      // opened, so a mistyped id there is still caught.
       const roomId = given ?? hostRoomId ?? mintRoomId()
-      const opened = given === null ? await roomById(roomId).open() : await roomById(roomId).reopen()
-      if (!opened.ok) {
-        return errorReply(
-          `No Room ${roomId} was ever opened. Check the Room id against the reply of open_viewer, or call open_viewer without room to open a new Room.`,
-        )
-      }
+      const opened = await roomById(roomId).open()
+      if (!opened.ok) return errorReply(opened.message)
       console.log(`[mcp] open_viewer | Room ${roomId}`)
       const look = await roomById(roomId).look()
 
