@@ -213,7 +213,7 @@ td:first-child code { white-space: nowrap; }
   <table>
     <tbody>
       <tr><th>It holds</th><td>The viewer state (ensemble URL and place in it, render style, structure appearance, viewer settings), its version, what Viewers have reported drawing, and news for the model.</td></tr>
-      <tr><th>It doesn't hold</th><td>The camera pose, which a Viewer's rig owns (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0005-one-owner-for-the-camera-the-rig-not-the-room.md">ADR 0005</a>), the 3D data, a history of earlier versions, the conversation, or who anyone is. The Room id is effectively the key to the Room.</td></tr>
+      <tr><th>It doesn't hold</th><td>The camera pose, which a Viewer's rig owns (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0005-one-owner-for-the-camera-the-rig-not-the-room.md">ADR 0005</a>), the highlight, which it only relays (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0006-the-highlight-is-relayed-never-kept.md">ADR 0006</a>), the 3D data, a history of earlier versions, the conversation, or who anyone is. The Room id is effectively the key to the Room.</td></tr>
       <tr><th>It accepts changes from</th><td>The model's tool calls and people's hand changes, as equal proposals. The Room alone applies them.</td></tr>
       <tr><th>Its lifetime</th><td>It expires after a day without use, and its contents are gone for good. Opening the same id again starts it empty.</td></tr>
     </tbody>
@@ -260,6 +260,7 @@ td:first-child code { white-space: nowrap; }
       <tr><td>Render style, structure appearance</td><td>Yes</td><td>Yes</td><td>Yes</td></tr>
       <tr><td>Camera position and target</td><td>Yes</td><td>Only until a Viewer draws the load</td><td>Yes, if a Viewer is open to report it or the load is undrawn</td></tr>
       <tr><td>Camera projection</td><td>Yes</td><td>No</td><td>No: the Viewer keeps its own framing</td></tr>
+      <tr><td>Highlight</td><td>No</td><td>No: relayed between Viewers as a person points, never kept (<a href="https://github.com/aidenlab/spacewalk-mcp/blob/main/docs/adr/0006-the-highlight-is-relayed-never-kept.md">ADR 0006</a>)</td><td>No</td></tr>
       <tr><td>Viewer settings</td><td>Beside it</td><td>Yes</td><td>Yes, if the URL carried them</td></tr>
       <tr><td>Locus</td><td>Yes</td><td>No</td><td>No</td></tr>
       <tr><td>Open panels, checked IGV tracks</td><td>Yes</td><td>No</td><td>No</td></tr>
