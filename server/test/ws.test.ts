@@ -601,3 +601,101 @@ describe('the camera', () => {
     })
   })
 })
+
+describe('the highlight', () => {
+  const PLACE = { url: 'https://example.com/a.sw', groupKey: null, traceKey: '1' }
+  const SELECTION = [{ index: 4, interpolant: 0.5 }]
+  const room = async () => {
+    const id = crypto.randomUUID()
+    await env.ROOM.getByName(id).open()
+    return id
+  }
+  /** What a Viewer hears next, once the Room has handled all it sent before: a join's resync if nothing else. */
+  const nextAfterAll = async (viewer: Connection) => {
+    viewer.send({ type: 'join', protocol: PROTOCOL_VERSION })
+    return viewer.next()
+  }
+
+  it('reaches every other Viewer, and not the one pointing', async () => {
+    const id = await room()
+    const pointing = await joinAndSync(id)
+    const second = await joinAndSync(id)
+    const third = await joinAndSync(id)
+    pointing.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    const moved = { type: 'highlight-moved', place: PLACE, selection: SELECTION }
+    expect(await second.next()).toEqual(moved)
+    expect(await third.next()).toEqual(moved)
+    expect(await nextAfterAll(pointing)).toMatchObject({ type: 'state' })
+  })
+
+  it('is kept nowhere, and does not keep the Room alive', async () => {
+    const id = await room()
+    const pointing = await joinAndSync(id)
+    const other = await joinAndSync(id)
+    const stub = env.ROOM.getByName(id)
+    const before = await runInDurableObject(stub, async (_, ctx) => {
+      await ctx.storage.deleteAlarm()
+      return Object.fromEntries(await ctx.storage.list())
+    })
+    pointing.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    await other.next()
+    const after = await runInDurableObject(stub, async (_, ctx) => ({
+      stored: Object.fromEntries(await ctx.storage.list()),
+      alarm: await ctx.storage.getAlarm(),
+    }))
+    expect(after).toEqual({ stored: before, alarm: null })
+  })
+
+  /** Close a Viewer and wait for the Room to have handled it. */
+  const leave = async (id: string, viewer: Connection, remaining: number) => {
+    viewer.close()
+    await viewer.closed
+    await vi.waitFor(async () => {
+      const count = await runInDurableObject(env.ROOM.getByName(id), (_, ctx) => ctx.getWebSockets().length)
+      expect(count).toBe(remaining)
+    })
+  }
+
+  it('is cleared for the others when the Viewer that pointed last leaves', async () => {
+    const id = await room()
+    const pointing = await joinAndSync(id)
+    const other = await joinAndSync(id)
+    pointing.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    await other.next()
+    await leave(id, pointing, 1)
+    expect(await other.next()).toEqual({ type: 'highlight-moved', place: PLACE, selection: [] })
+  })
+
+  it('is not cleared again when a Viewer that has cleared leaves', async () => {
+    const id = await room()
+    const pointing = await joinAndSync(id)
+    const other = await joinAndSync(id)
+    pointing.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    pointing.send({ type: 'highlighted', place: PLACE, selection: [] })
+    await other.next()
+    await other.next()
+    await leave(id, pointing, 1)
+    expect(await nextAfterAll(other)).toMatchObject({ type: 'state' })
+  })
+
+  it('is not cleared when a Viewer that never pointed leaves', async () => {
+    const id = await room()
+    const idle = await joinAndSync(id)
+    const other = await joinAndSync(id)
+    await leave(id, idle, 1)
+    expect(await nextAfterAll(other)).toMatchObject({ type: 'state' })
+  })
+
+  it("is not cleared when a Viewer leaves after another took over the pointing", async () => {
+    const id = await room()
+    const first = await joinAndSync(id)
+    const second = await joinAndSync(id)
+    const watching = await joinAndSync(id)
+    first.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    await watching.next()
+    second.send({ type: 'highlighted', place: PLACE, selection: SELECTION })
+    await watching.next()
+    await leave(id, first, 2)
+    expect(await nextAfterAll(watching)).toMatchObject({ type: 'state' })
+  })
+})

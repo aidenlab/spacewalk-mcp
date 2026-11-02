@@ -7,7 +7,9 @@ import {
   type Camera,
   type EnsembleKind,
   type ErrorCode,
+  type Place,
   type PlacedCamera,
+  type PlacedHighlight,
   type Realization,
   type RealizedMessage,
   type RoomMessage,
@@ -114,14 +116,17 @@ interface Waiter {
 }
 
 /**
- * What the Room keeps on each socket, surviving hibernation: that it joined and when, and whether
- * it holds the camera. Kept here, the record of the holder goes with the socket. With none marked,
- * the longest-connected Viewer holds it (ADR 0005).
+ * What the Room keeps on each socket, surviving hibernation: that it joined and when, whether
+ * it holds the camera, and the place of its highlight if it pointed last. Kept here, each record
+ * goes with the socket. With none marked, the longest-connected Viewer holds the camera
+ * (ADR 0005); the highlight itself is never kept (ADR 0006).
  */
 interface Attachment {
   joined: boolean
   joinedAt: number
   holdsCamera: boolean
+  /** Set while this Viewer's highlight is the one shown; absent on a socket that joined before it. */
+  highlighted?: Place | null
 }
 
 // Storage keys. A live Room holds CURRENT, and REALIZED and FAILURES once Viewers report, and
@@ -272,7 +277,28 @@ export class Room extends DurableObject<Env> {
         return this.answered(message.data.requestId, message.data.pose)
       case 'camera-reset-done':
         return this.answered(message.data.requestId, null)
+      case 'highlighted':
+        return this.relayHighlight(socket, message.data)
     }
+  }
+
+  /**
+   * Relay a highlight to the others, and remember which Viewer's is shown, so that a clear follows
+   * it out if it leaves. Kept nowhere else, and no touch: a highlight comes at pointer speed, and
+   * alone does not keep the Room alive (ADR 0006).
+   */
+  private relayHighlight(socket: WebSocket, { place, selection }: PlacedHighlight) {
+    const pointing = selection.length > 0
+    for (const viewer of this.viewers()) {
+      const attachment = attachmentOf(viewer)
+      if (viewer === socket) {
+        viewer.serializeAttachment({ ...attachment, highlighted: pointing ? place : null } satisfies Attachment)
+      } else if (pointing && attachment.highlighted) {
+        // Another Viewer's highlight now shows in place of this one's.
+        viewer.serializeAttachment({ ...attachment, highlighted: null } satisfies Attachment)
+      }
+    }
+    this.relay(socket, { type: 'highlight-moved', place, selection })
   }
 
   /** Make this Viewer the one camera holder. */
@@ -369,7 +395,12 @@ export class Room extends DurableObject<Env> {
     if (!current.ok) return this.refuseGone(socket, current.reason)
     await this.touch()
     if (!hasJoined(socket)) {
-      socket.serializeAttachment({ joined: true, joinedAt: Date.now(), holdsCamera: false } satisfies Attachment)
+      socket.serializeAttachment({
+        joined: true,
+        joinedAt: Date.now(),
+        holdsCamera: false,
+        highlighted: null,
+      } satisfies Attachment)
     }
     socket.send(stateMessage(current))
   }
@@ -482,6 +513,9 @@ export class Room extends DurableObject<Env> {
   async webSocketClose(socket: WebSocket) {
     const others = this.viewers().filter((viewer) => viewer !== socket)
     if (others.length === 0) this.answer({ outcome: 'no-viewer' })
+    // Its highlight would otherwise stay up on every other screen.
+    const highlighted = hasJoined(socket) ? attachmentOf(socket).highlighted : null
+    if (highlighted) this.relay(socket, { type: 'highlight-moved', place: highlighted, selection: [] })
     // Answer the close, so the socket leaves the Room and cannot be taken for the camera holder.
     try {
       socket.close()

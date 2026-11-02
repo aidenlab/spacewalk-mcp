@@ -9,6 +9,10 @@ import { z } from 'zod'
 /**
  * The protocol version. A Viewer sends it when it joins, and a Room refuses a Viewer that
  * speaks another one. Bump it on any change a Viewer and a Room could not both survive.
+ *
+ * The highlight messages came in at 2 without a bump: an older Viewer drops a `highlight-moved`
+ * it cannot read, and an older Room refuses `highlighted` as malformed, so the Worker deploys
+ * before any Viewer that sends it.
  */
 export const PROTOCOL_VERSION = 2
 
@@ -227,6 +231,30 @@ export const CameraResetDoneMessage = z.object({
   requestId: z.string(),
 })
 
+/**
+ * A point a person points at along a trace: between bead `index` and the next, `interpolant` of
+ * the way along. No index over a genomic gap.
+ */
+export const HighlightPoint = z.object({
+  index: z.int().nonnegative().optional(),
+  interpolant: z.number().min(0).max(1),
+})
+export type HighlightPoint = z.infer<typeof HighlightPoint>
+
+/** What is highlighted: at most two points, the ends of a range. Empty is a clear. */
+export const Selection = z.array(HighlightPoint).max(2)
+export type Selection = z.infer<typeof Selection>
+
+/** A highlight and the place it was made in: it means nothing in any other (ADR 0006). */
+export const PlacedHighlight = z.object({ place: Place, selection: Selection })
+export type PlacedHighlight = z.infer<typeof PlacedHighlight>
+
+/**
+ * Viewer → Room: a person is pointing here, or has stopped, with an empty selection. Sent while
+ * the pointer moves; the Room relays it and keeps nothing (ADR 0006).
+ */
+export const HighlightedMessage = PlacedHighlight.extend({ type: z.literal('highlighted') })
+
 /** Every message a Viewer sends a Room. */
 export const ViewerMessage = z.discriminatedUnion('type', [
   JoinMessage,
@@ -239,6 +267,7 @@ export const ViewerMessage = z.discriminatedUnion('type', [
   CameraSharedMessage,
   CameraAnswerMessage,
   CameraResetDoneMessage,
+  HighlightedMessage,
 ])
 export type ViewerMessage = z.infer<typeof ViewerMessage>
 
@@ -302,6 +331,9 @@ export const ResetCameraMessage = z.object({
   requestId: z.string().optional(),
 })
 
+/** Room → Viewer: another Viewer's highlight, to draw if this Viewer shows that place. */
+export const HighlightMovedMessage = PlacedHighlight.extend({ type: z.literal('highlight-moved') })
+
 /** Every message a Room sends a Viewer. */
 export const RoomMessage = z.discriminatedUnion('type', [
   ErrorMessage,
@@ -310,5 +342,6 @@ export const RoomMessage = z.discriminatedUnion('type', [
   AskCameraMessage,
   ShareCameraMessage,
   ResetCameraMessage,
+  HighlightMovedMessage,
 ])
 export type RoomMessage = z.infer<typeof RoomMessage>

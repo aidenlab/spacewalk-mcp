@@ -8,6 +8,7 @@ export {
   type CameraPort,
   type Drawing,
   type EndReason,
+  type HighlightPort,
   type Remote,
   type Socket,
   type Status,

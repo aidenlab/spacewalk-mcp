@@ -4,6 +4,8 @@
  * and reports each version realized. How to draw is the Viewer's own: it passes `draw`, and the
  * library never touches the scene or the DOM. The camera is the one thing the Room does not hold
  * (ADR 0005): the Viewer passes `camera`, its rig answers, and the library only carries messages.
+ * The highlight is not held either, only relayed (ADR 0006): the Viewer passes `highlight` to
+ * draw another Viewer's, and reports its own.
  */
 import {
   PROTOCOL_VERSION,
@@ -11,9 +13,12 @@ import {
   type EnsembleKind,
   type ErrorCode,
   type Loaded,
+  type Place,
   type PlacedCamera,
+  type PlacedHighlight,
   type Proposal,
   type RealizedMessage,
+  type Selection,
   type StateMessage,
   type ViewerMessage,
   type ViewerState,
@@ -51,6 +56,8 @@ export interface AttachOptions {
   draw(state: ViewerState, version: number, loaded: Loaded | null): Drawing | Promise<Drawing>
   /** The Viewer's camera, which owns the camera pose. */
   camera: CameraPort
+  /** The Viewer's highlight, to draw another Viewer's by. Without it, theirs are ignored. */
+  highlight?: HighlightPort
   /** Told how the connection stands; see `Status`. */
   onStatus?(status: Status): void
   /**
@@ -70,6 +77,15 @@ export interface CameraPort {
   follow(pose: PlacedCamera): void
   /** Frame the structure, unless a person is dragging. */
   reset(): void
+}
+
+/** What the library needs of the Viewer's highlight. */
+export interface HighlightPort {
+  /**
+   * Another Viewer's highlight, or its clear when the selection is empty: draw it, unless it is
+   * for another place or a person here is pointing.
+   */
+  follow(highlight: PlacedHighlight): void
 }
 
 /**
@@ -111,6 +127,11 @@ export interface Remote {
   resetCamera(): void
   /** This Viewer has just framed or joined: ask for the holder's pose, if another holds it. */
   wantCamera(): void
+  /**
+   * A person is pointing at `selection` in `place`, or has stopped, with an empty selection. Call
+   * it on every move: sends go out about once an animation frame, and the latest always goes last.
+   */
+  highlighted(place: Place, selection: Selection): void
   /** Close the connection for good: no reconnect, and no further calls to the Viewer. */
   detach(): void
 }
@@ -119,12 +140,15 @@ const OPEN = 1
 
 const GESTURE_END_MS = 250
 
+/** The wait between highlight sends where there is no animation frame to wait for. */
+const HIGHLIGHT_INTERVAL_MS = 33
+
 /** The wait before reconnecting grows a second each attempt, to this most. */
 const MAX_RECONNECT_DELAY_MS = 5000
 
 /** Attach a Viewer to its Room. Throws at once if `url` is not an absolute URL. */
 export function attachRemote(options: AttachOptions): Remote {
-  const { draw, camera, onStatus, gestureEndMs = GESTURE_END_MS } = options
+  const { draw, camera, highlight, onStatus, gestureEndMs = GESTURE_END_MS } = options
   const url = new URL(options.url)
   url.searchParams.set('room', options.room)
   const createSocket = options.createSocket ?? ((url: string) => new WebSocket(url) as unknown as Socket)
@@ -153,6 +177,8 @@ export function attachRemote(options: AttachOptions): Remote {
           return receive(message)
         case 'camera-moved':
           return camera.follow({ place: message.place, camera: message.camera })
+        case 'highlight-moved':
+          return highlight?.follow({ place: message.place, selection: message.selection })
         case 'ask-camera':
           return void send({ type: 'camera-answer', requestId: message.requestId, pose: camera.read() })
         case 'share-camera': {
@@ -243,6 +269,8 @@ export function attachRemote(options: AttachOptions): Remote {
     clearTimeout(reconnectTimer)
     clearTimeout(gestureTimer)
     dragged = null
+    cancelHighlightTick()
+    pendingHighlight = null
     const current = socket
     socket = null
     current?.close()
@@ -281,6 +309,33 @@ export function attachRemote(options: AttachOptions): Remote {
     send({ type: 'propose', proposal })
   }
 
+  // The latest highlight not yet sent, and the wait before the next may go.
+  let pendingHighlight: PlacedHighlight | null = null
+  let cancelHighlightTick: () => void = () => {}
+  let highlightTicking = false
+
+  /**
+   * Send a highlight at once if none went this frame; else keep it as the latest, for the frame's
+   * end. Each one replaces the last waiting, so the newest, a clear included, always goes last.
+   */
+  function highlighted(place: Place, selection: Selection) {
+    if (detached) return
+    pendingHighlight = { place, selection }
+    if (!highlightTicking) sendHighlight()
+  }
+
+  /** Send the latest highlight waiting, then wait a frame before the next; with none, stop. */
+  function sendHighlight() {
+    if (pendingHighlight === null) {
+      highlightTicking = false
+      return
+    }
+    send({ type: 'highlighted', ...pendingHighlight })
+    pendingHighlight = null
+    highlightTicking = true
+    cancelHighlightTick = afterFrame(sendHighlight)
+  }
+
   connect()
   return {
     propose,
@@ -288,8 +343,19 @@ export function attachRemote(options: AttachOptions): Remote {
     releasedCamera: (pose) => void send({ type: 'camera-released', ...pose }),
     resetCamera: () => void send({ type: 'camera-reset' }),
     wantCamera: () => void send({ type: 'want-camera' }),
+    highlighted,
     detach: stop,
   }
+}
+
+/** Call `then` after the next animation frame, or a frame's time where there are none; cancellable. */
+function afterFrame(then: () => void): () => void {
+  if (typeof requestAnimationFrame === 'function') {
+    const frame = requestAnimationFrame(() => then())
+    return () => cancelAnimationFrame(frame)
+  }
+  const timer = setTimeout(then, HIGHLIGHT_INTERVAL_MS)
+  return () => clearTimeout(timer)
 }
 
 /** A change a person makes by dragging: it waits for the gesture to end. */

@@ -248,6 +248,39 @@ describe('the camera', () => {
   })
 })
 
+describe('the highlight', () => {
+  /** A highlight at bead `index`, so each in a burst is told apart. */
+  const at = (index: number) => [{ index, interpolant: 0.5 }]
+
+  it('sends a burst of highlights as a few, ending on the last', async () => {
+    const { remote, socket } = await joined()
+    for (let index = 0; index < 100; index++) {
+      remote.highlighted(PLACE, at(index))
+      await vi.advanceTimersByTimeAsync(1)
+    }
+    await vi.advanceTimersByTimeAsync(100)
+    const sent = socket.sentOf('highlighted')
+    expect(sent.length).toBeGreaterThan(1)
+    expect(sent.length).toBeLessThanOrEqual(10)
+    expect(sent.at(-1)).toEqual({ type: 'highlighted', place: PLACE, selection: at(99) })
+  })
+
+  it('sends a clear after a burst last, behind nothing older', async () => {
+    const { remote, socket } = await joined()
+    for (let index = 0; index < 10; index++) remote.highlighted(PLACE, at(index))
+    remote.highlighted(PLACE, [])
+    await vi.advanceTimersByTimeAsync(100)
+    expect(socket.sentOf('highlighted').at(-1)).toEqual({ type: 'highlighted', place: PLACE, selection: [] })
+  })
+
+  it("follows another Viewer's highlight", async () => {
+    const follow = vi.fn()
+    const { socket } = await joined({ highlight: { follow } })
+    socket.receive({ type: 'highlight-moved', place: PLACE, selection: at(3) })
+    expect(follow).toHaveBeenCalledWith({ place: PLACE, selection: at(3) })
+  })
+})
+
 describe('a dropped connection', () => {
   it('reconnects, joins again and draws the version it is resynced to', async () => {
     const { draw, onStatus, socket: first } = await joined({}, 5)
