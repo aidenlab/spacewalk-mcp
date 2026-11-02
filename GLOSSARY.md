@@ -52,6 +52,12 @@ _Avoid_: default camera, home position
 The one Viewer whose camera is the truth at any moment, which the others follow. It is the Viewer where a person last took hold of the camera, let go of it, reset it or stepped to another trace, and when that Viewer leaves, the longest-connected one takes over.
 _Avoid_: leader, presenter, camera owner
 
+### Pointing
+
+**Highlight**:
+The genomic locus a person is pointing at, shown at once in genomic space and in 3D space; the visual link between the two is the point. Pointing at the genomic navigator lights the matching part of the structure: a ball, a red bead travelling along the ribbon, or the cluster of points for that genomic extent, with the rest greyed out. With balls and sticks it also works the other way: pointing at a ball lights its place on the navigator. Anyone in the Room may highlight, and every Viewer sees it, since all of them show the same trace; a Viewer caught mid-step on another trace shows no shared highlight. One highlight shows at a time, and the last person to move wins, except that a person's own highlight always wins on their own screen. It lasts only while the person points: the Room keeps no record of it, it is never saved, and the model takes no part in it.
+_Avoid_: hover, selection, cursor, marker
+
 ### What outlasts the Room
 
 **Session**:
