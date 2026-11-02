@@ -505,6 +505,17 @@ export class Room extends DurableObject<Env> {
     return { ok: true, version, state, viewers: this.viewers().length, realized, news }
   }
 
+  /**
+   * How many Viewers have joined: a check that the Room is live and someone is looking. A use of
+   * the Room, but not a look, so the news is kept for the model's next one.
+   */
+  async viewerCount(): Promise<{ ok: true; viewers: number } | Refusal> {
+    const current = await this.live()
+    if (!current.ok) return current
+    await this.touch()
+    return { ok: true, viewers: this.viewers().length }
+  }
+
   /** Keep news for the model's next look. */
   private async tell(item: News) {
     const news = await this.news()
