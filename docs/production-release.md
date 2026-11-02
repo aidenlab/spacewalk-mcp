@@ -51,13 +51,13 @@ If they print anything, get the two to match, redeploy dev with `scripts/deploy-
 git -C ../spacewalk show origin/main:package.json | grep spacewalk-remote
 ```
 
-Then compare that version's tag with `main`, here for `0.2.0`:
+Then compare that version's tag with `main`, here for `0.3.0`. Versions from 0.3.0 on are on npm and tagged `v<version>`. 0.1.0 and 0.2.0 were tarballs, tagged `remote-<version>`:
 
 ```sh
-git diff --stat remote-0.2.0 origin/main -- remote
+git diff --stat v0.3.0 origin/main -- remote
 ```
 
-If that shows changes to `remote/`, release a new version and update the pin in `spacewalk` before going on. `docs/spacewalk-remote-tarball-stopgap.html` explains how. A `prod-` tag does not publish the package.
+If that shows changes to `remote/`, release a new version and update the pin in `spacewalk` before going on. `docs/releasing-spacewalk-remote.md` explains how. A `prod-` tag does not publish the package.
 
 ## 2. Tag `main` in both repos
 

@@ -112,7 +112,7 @@ th { font-weight: 650; }
 
 <header style="display:grid;gap:12px">
   <h1>How spacewalk-mcp fits together</h1>
-  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026.</p>
+  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026. The parts about npm were updated on November 2, 2026, when the remote reached npm.</p>
 </header>
 
 <div class="answers">
@@ -121,12 +121,12 @@ th { font-weight: 650; }
     <p>Two things: the server and the Viewer. The server reads the <code>remote/</code> folder directly. The Viewer gets a copy.</p>
   </div>
   <div class="answers__item">
-    <div class="answers__question">Where do the tarball and npm come in?</div>
+    <div class="answers__question">Where does npm come in?</div>
     <p>Only in how the Viewer gets its copy. The server never touches either one.</p>
   </div>
   <div class="answers__item">
-    <div class="answers__question">Do I choose between the tarball and npm?</div>
-    <p>No. They're the same file in two different places. The Viewer uses the tarball until the package is on npm, then it switches. That switch is one line in one file.</p>
+    <div class="answers__question">What happened to the tarball?</div>
+    <p>It was a stopgap while the package couldn't go on npm. 0.1.0 and 0.2.0 were tarballs on GitHub releases. From 0.3.0 the package is on npm, and the Viewer installs it from there by version.</p>
   </div>
   <div class="answers__item">
     <div class="answers__question">Why does this project have so many <code>package.json</code> files?</div>
@@ -178,7 +178,7 @@ th { font-weight: 650; }
   <h2>Where the code lives</h2>
   <p>The code is in two GitHub repos. This is the picture to keep in your head:</p>
   <figure>
-    <svg viewBox="0 0 760 420" role="img" aria-label="The spacewalk-mcp repo holds server, remote and roundtrip folders. The server reads the remote folder directly. A tarball copy of remote sits on a GitHub release, and the Viewer code in the spacewalk repo downloads it.">
+    <svg viewBox="0 0 760 420" role="img" aria-label="The spacewalk-mcp repo holds server, remote and roundtrip folders. The server reads the remote folder directly. A copy of remote is published to npm, and the Viewer code in the spacewalk repo installs it from there.">
       <defs>
         <marker id="map-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
         <marker id="map-head-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path class="diagram__head diagram__head--accent" d="M0 0 L10 5 L0 10 z"/></marker>
@@ -208,11 +208,11 @@ th { font-weight: 650; }
       <text class="diagram__text" x="105" y="362" text-anchor="middle">tests, not written yet</text>
 
       <rect class="diagram__box diagram__box--accent" x="280" y="310" width="150" height="80" rx="5"/>
-      <text class="diagram__title" x="355" y="342" text-anchor="middle">Tarball</text>
-      <text class="diagram__text" x="355" y="362" text-anchor="middle">on a GitHub release</text>
+      <text class="diagram__title" x="355" y="342" text-anchor="middle">npm</text>
+      <text class="diagram__text" x="355" y="362" text-anchor="middle">a published version</text>
 
       <line class="diagram__line diagram__line--accent" x1="355" y1="230" x2="355" y2="307" marker-end="url(#map-head-accent)"/>
-      <text class="diagram__label diagram__label--accent" x="365" y="273">copied to</text>
+      <text class="diagram__label diagram__label--accent" x="365" y="273">published to</text>
 
       <rect class="diagram__box diagram__box--repo" x="520" y="10" width="230" height="400" rx="8"/>
       <text class="diagram__repo-title" x="538" y="36">spacewalk repo</text>
@@ -223,9 +223,9 @@ th { font-weight: 650; }
       <text class="diagram__text" x="635" y="198" text-anchor="middle">its own package.json</text>
 
       <path class="diagram__line diagram__line--accent" d="M430 350 H635 V233" marker-end="url(#map-head-accent)"/>
-      <text class="diagram__label diagram__label--accent" x="578" y="340" text-anchor="middle">downloads</text>
+      <text class="diagram__label diagram__label--accent" x="578" y="340" text-anchor="middle">installs</text>
     </svg>
-    <figcaption>The two teal arrows are the tarball's whole journey. When the package reaches npm, the tarball box moves to npm, and nothing else in this picture changes.</figcaption>
+    <figcaption>The two teal arrows are the published package's whole journey. Until 0.3.0, the npm box was a tarball on a GitHub release. Nothing else in this picture changed.</figcaption>
   </figure>
   <p>The remote lives in <code>spacewalk-mcp</code> so the message rules are written once. If each repo had its own copy, nothing would stop them from drifting apart. <a href="adr/0003-remote-and-protocol-live-here-the-viewer-page-does-not.md">ADR 0003</a> records that decision.</p>
 </section>
@@ -256,28 +256,28 @@ th { font-weight: 650; }
     <tbody>
       <tr><th>What it uses</th><td>The message rules only (<code>remote/src/protocol.ts</code>)</td><td>All of it, through <code>attachRemote</code></td></tr>
       <tr><th>Where it asks for it</th><td><code>server/package.json</code></td><td><code>spacewalk/package.json</code></td></tr>
-      <tr><th>What that file says</th><td><code>"*"</code>, which means any version. npm finds the folder in this repo and links to it.</td><td>The tarball's web address</td></tr>
-      <tr><th>When it sees a change</th><td>Right away, while you're developing</td><td>After a new tarball is released and the address is updated</td></tr>
-      <tr><th>Affected by tarball or npm?</th><td><strong>No</strong></td><td><strong>Yes</strong></td></tr>
+      <tr><th>What that file says</th><td><code>"*"</code>, which means any version. npm finds the folder in this repo and links to it.</td><td>An exact version from npm, such as <code>"0.3.0"</code></td></tr>
+      <tr><th>When it sees a change</th><td>Right away, while you're developing</td><td>After a new version is published and the pin is updated</td></tr>
+      <tr><th>Affected by npm?</th><td><strong>No</strong></td><td><strong>Yes</strong></td></tr>
     </tbody>
   </table>
   </div>
   <h3>Why the difference matters</h3>
-  <p>Once deployed, the server and the Viewer each hold a fixed copy of the message rules, and those copies can fall out of step. If you change the rules and raise <code>PROTOCOL_VERSION</code>, a Room refuses any Viewer with the old number and shows "This viewer is out of date: reload the viewer." Reloading only helps once a Viewer built with the new tarball has been deployed.</p>
-  <p>So a change to the message rules takes three steps: release a new tarball, update the Viewer's address, then deploy both the server and the Viewer.</p>
+  <p>Once deployed, the server and the Viewer each hold a fixed copy of the message rules, and those copies can fall out of step. If you change the rules and raise <code>PROTOCOL_VERSION</code>, a Room refuses any Viewer with the old number and shows "This viewer is out of date: reload the viewer." Reloading only helps once a Viewer built with the new version has been deployed.</p>
+  <p>So a change to the message rules takes three steps: publish a new version, update the Viewer's pin, then deploy both the server and the Viewer.</p>
 </section>
 
 <section>
-  <h2>Tarball and npm: the same file on different shelves</h2>
-  <p>A tarball is a single compressed file holding a folder of code. npm stores every package this way. Publishing to npm puts the file on npm's shelf, where it's found by name. Our stopgap puts the identical file on a GitHub release, where it's found by web address.</p>
+  <h2>From tarball to npm: the same file on different shelves</h2>
+  <p>A tarball is a single compressed file holding a folder of code. npm stores every package this way. Publishing to npm puts the file on npm's shelf, where it's found by name. The stopgap put the identical file on a GitHub release, where it was found by web address.</p>
   <p>Only this line in <code>spacewalk/package.json</code> changes between the three stages:</p>
   <div class="table-wrap">
   <table>
     <thead><tr><th>Stage</th><th>The line says</th><th>Good for</th></tr></thead>
     <tbody>
       <tr><td>Folder link (before)</td><td><code>file:../spacewalk-mcp/remote</code></td><td>Your laptop only</td></tr>
-      <tr><td><strong>Tarball (now)</strong></td><td><code>https://github.com/aidenlab/spacewalk-mcp/releases/download/remote-0.1.0/aidenlab-spacewalk-remote-0.1.0.tgz</code></td><td>Anywhere</td></tr>
-      <tr><td>npm (later)</td><td><code>"0.1.0"</code></td><td>Anywhere, and the normal long-term setup</td></tr>
+      <tr><td>Tarball (0.1.0 and 0.2.0)</td><td><code>https://github.com/aidenlab/spacewalk-mcp/releases/download/remote-0.2.0/aidenlab-spacewalk-remote-0.2.0.tgz</code></td><td>Anywhere</td></tr>
+      <tr><td><strong>npm (now, from 0.3.0)</strong></td><td><code>"0.3.0"</code></td><td>Anywhere, and the normal long-term setup</td></tr>
     </tbody>
   </table>
   </div>
@@ -286,14 +286,11 @@ th { font-weight: 650; }
   <table>
     <thead><tr><th>Where</th><th>What it uses</th></tr></thead>
     <tbody>
-      <tr><td><code>spacewalk</code> branch <code>main</code></td><td>Nothing. The remote arrives when issue #130 merges.</td></tr>
-      <tr><td><code>spacewalk</code> branch <code>viewer-attaches-to-room</code></td><td>The tarball</td></tr>
-      <tr><td>The <code>spacewalk</code> folder on your laptop</td><td>Still the folder link, until you next run <code>npm install</code> there</td></tr>
-      <tr><td>npm</td><td>The package isn't published yet, so nothing can use it from there</td></tr>
+      <tr><td><code>spacewalk</code> branch <code>main</code></td><td>The 0.2.0 tarball, until <a href="https://github.com/aidenlab/spacewalk/pull/149">spacewalk#149</a> merges and pins 0.3.0 from npm</td></tr>
+      <tr><td>npm</td><td>0.3.0, the <code>latest</code> version</td></tr>
     </tbody>
   </table>
   </div>
-  <p>The <code>README.md</code> and ADR 0003 in this repo describe the remote as published to npm. That's the plan and not yet the case.</p>
 </section>
 
 <section>
@@ -302,15 +299,14 @@ th { font-weight: 650; }
   <table>
     <thead><tr><th>You want to</th><th>Do this</th></tr></thead>
     <tbody>
-      <tr><td>Work on the server</td><td>Nothing special. Tarballs and npm don't apply.</td></tr>
+      <tr><td>Work on the server</td><td>Nothing special. npm doesn't apply.</td></tr>
       <tr><td>Work on the Viewer without changing the remote</td><td>Run <code>npm install</code> in <code>spacewalk</code> once, then work as usual.</td></tr>
       <tr><td>Change the remote and try it in the Viewer on your laptop</td><td>In <code>spacewalk</code>, run <code>npm install ../spacewalk-mcp/remote --no-save</code>. This links your folder without changing any tracked file.</td></tr>
-      <tr><td>Make a remote change available to everyone</td><td>Raise the version, merge to <code>main</code>, release a new tarball, then update the address in <code>spacewalk/package.json</code>.</td></tr>
-      <tr><td>Move to npm when access arrives</td><td>Publish through <code>publish-remote.yml</code>, then replace the address with the version number.</td></tr>
+      <tr><td>Make a remote change available to everyone</td><td>Raise the version, merge to <code>main</code>, publish it with a <code>v</code> release, then update the pin in <code>spacewalk/package.json</code>.</td></tr>
     </tbody>
   </table>
   </div>
-  <p>The exact commands for the last two rows are in the <a href="spacewalk-remote-tarball-stopgap.html">tarball stopgap guide</a>.</p>
+  <p>The exact commands for the last row are in <a href="releasing-spacewalk-remote.md">Releasing spacewalk-remote</a>.</p>
 </section>
 
 <section>
@@ -337,7 +333,7 @@ th { font-weight: 650; }
     <tbody>
       <tr><td>Server</td><td>Cloudflare Workers</td><td><code>wrangler deploy</code>, which also packs in the message rules from <code>remote/</code></td><td>Not yet (#11)</td></tr>
       <tr><td>Viewer</td><td>Cloudflare Pages</td><td>Built from <code>spacewalk</code>, including whichever remote its <code>package.json</code> names</td><td>Not yet (#11)</td></tr>
-      <tr><td>Remote</td><td>GitHub release, later npm</td><td><code>gh release create</code>, later <code>publish-remote.yml</code></td><td><a href="https://github.com/aidenlab/spacewalk-mcp/releases/tag/remote-0.1.0">Released on GitHub</a>, not on npm</td></tr>
+      <tr><td>Remote</td><td>npm</td><td><code>publish-remote.yml</code>, started by a <code>v</code> release</td><td><a href="https://www.npmjs.com/package/@aidenlab/spacewalk-remote">0.3.0 on npm</a></td></tr>
     </tbody>
   </table>
   </div>

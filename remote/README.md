@@ -77,4 +77,5 @@ protocol mismatch, an expired Room or an unknown one, the library stops and `onS
 
 Publishing a GitHub release tagged `v<version>` publishes this package at that version
 (`.github/workflows/publish-remote.yml`). Bump `version` in `remote/package.json` first, since
-the tag must match it. A pre-release goes to the `next` dist-tag.
+the tag must match it. A pre-release goes to the `next` dist-tag. The whole process, including
+the pin in `spacewalk`, is in `docs/releasing-spacewalk-remote.md`.
