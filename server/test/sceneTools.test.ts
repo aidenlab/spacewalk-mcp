@@ -229,6 +229,73 @@ describe('read_viewer_state', () => {
   })
 })
 
+describe('read_viewer_count', () => {
+  it('tells how many Viewers have joined, none yet', async () => {
+    const room = await openRoom()
+
+    const result = await call('read_viewer_count', { room })
+
+    expect(result.structuredContent).toEqual({ viewers: 0 })
+    expect(text(result)).toContain('Viewers connected: 0.')
+  })
+
+  it('counts the Viewers that have joined', async () => {
+    const room = await openRoom()
+    await joinAndSync(room)
+    await joinAndSync(room)
+
+    const result = await call('read_viewer_count', { room })
+
+    expect(result.structuredContent).toEqual({ viewers: 2 })
+    expect(text(result)).toContain('Viewers connected: 2.')
+  })
+
+  it('leaves a hand change for the next read_viewer_state to tell', async () => {
+    const room = await openRoom()
+    const viewer = await joinAndSync(room)
+    viewer.send({ type: 'propose', proposal: { type: 'set-render-style', style: 'ribbon' } })
+    expect(await viewer.next()).toMatchObject({ version: 1 })
+
+    await call('read_viewer_count', { room })
+
+    expect(text(await call('read_viewer_state', { room }))).toContain(
+      'Changed since your last reply, not by you: switched to ribbon.',
+    )
+  })
+
+  it('puts off the Room expiring for a day from the call', async () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const room = await openRoom()
+    const stub = env.ROOM.getByName(room)
+    await runInDurableObject(stub, (_, ctx) => ctx.storage.setAlarm(Date.now() + 1000))
+
+    const before = Date.now()
+    await call('read_viewer_count', { room })
+    const after = Date.now()
+
+    const alarm = await runInDurableObject(stub, (_, ctx) => ctx.storage.getAlarm())
+    expect(alarm).toBeGreaterThanOrEqual(before + DAY)
+    expect(alarm).toBeLessThanOrEqual(after + DAY)
+  })
+
+  it('is an error for a Room never opened, as read_viewer_state words it', async () => {
+    const result = await call('read_viewer_count', { room: 'JT89R774EC' })
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toMatch(/^Error: No such Room as JT89R774EC\. Call open_viewer/)
+    expect(result.structuredContent).toBeUndefined()
+  })
+
+  it('is an error for an expired Room, as read_viewer_state words it', async () => {
+    const room = await openRoom()
+    await runDurableObjectAlarm(env.ROOM.getByName(room))
+
+    const result = await call('read_viewer_count', { room })
+
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toMatch(new RegExp(`^Error: Room ${room} has expired`))
+  })
+})
+
 const ENSEMBLE_URL = 'https://example.org/ensemble.sw'
 
 /** A shortener that is down: the long URL is what the model gets. */

@@ -25,6 +25,7 @@ The script adds `room` to the arguments itself. It prints the reply, and exits 1
 | To | Run |
 | --- | --- |
 | See what the Viewer shows | `node scripts/dev-check.mjs 2NNGYETVZD read_viewer_state` |
+| Count the connected Viewers, leaving the news for the next read | `node scripts/dev-check.mjs 2NNGYETVZD read_viewer_count` |
 | List the example ensembles | `node scripts/dev-check.mjs 2NNGYETVZD list_example_ensembles` |
 | Load an ensemble | `node scripts/dev-check.mjs 2NNGYETVZD load_ensemble '{"url":"https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/A549_chr21-28-30Mb.sw"}'` |
 | Set the render style | `node scripts/dev-check.mjs 2NNGYETVZD set_render_style '{"style":"ribbon"}'` (or `ball_and_stick`) |
