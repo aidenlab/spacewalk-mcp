@@ -20,13 +20,17 @@ _Avoid_: session, channel
 The link that brings anyone into a Room.
 _Avoid_: URL, invite, share link
 
-**Driver**:
-The person whose conversation a Room belongs to: their model makes the tool calls. A role in one Room, not a kind of person.
-_Avoid_: presenter, owner, host, user
+**Participant**:
+Anyone with a Room open, the Organizer included. No Participant controls the Room: anyone's change counts the same, and the camera follows whoever last took hold of it (see **Camera holder**).
+_Avoid_: driver, user, collaborator
+
+**Organizer**:
+The Participant whose conversation a Room belongs to: their model makes the tool calls and hears what changed. It is the only role in a Room and cannot be handed over; in what the Viewers show, the Organizer is one Participant among equals.
+_Avoid_: driver, host (geenee's word for the Claude or ChatGPT app), presenter, owner
 
 **Guest**:
-A person who joins a Room through its Room link, with no conversation, as an equal of the Driver in what the Viewers show.
-_Avoid_: bystander, participant, collaborator
+A Participant other than the Organizer, who joins through the Room link with no conversation.
+_Avoid_: bystander, viewer
 
 ### What the Room holds
 
