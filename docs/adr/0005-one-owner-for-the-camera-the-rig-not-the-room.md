@@ -13,7 +13,7 @@ A loaded session carries a pose, and may arrive with no Viewer open. The Room ho
 ## Considered Options
 
 - **Keep the Room's copy and clear it on a change of trace.** Rejected: it fixes the blank canvas but keeps two records of one fact, with the Room's still behind during a drag and still blind to the framing.
-- **A fixed leader, whose Viewer alone may move the camera.** Rejected: the glossary makes a Guest an equal of the Driver in what the Viewers show.
+- **A fixed leader, whose Viewer alone may move the camera.** Rejected: the glossary makes a Guest an equal of the Organizer in what the Viewers show.
 - **One independent camera per Viewer.** Rejected: strictest of all, but people in a meeting could be looking from different camera poses, and M3 promises the same camera.
 - **Keep the pose across a reload in `sessionStorage`.** Rejected: it is a second copy of the pose.
 - **Wait for the camera to settle before answering.** Rejected: a person who keeps dragging could hold an answer until it times out.
@@ -27,4 +27,4 @@ ADR 0001 rejected relaying commands between pages for their costs in echo, drift
 - A lone Viewer that reloads loses its orbit and shows the framing.
 - Viewers with different window shapes can crop one pose differently.
 - A camera move creates no version, so `reset_camera` cannot wait for a realized version and waits for the holder to confirm instead.
-- Followers jump to the final pose at release. Live tracking during a drag is left to M3, with the same message.
+- Followers jump to the final pose at release. Live tracking during a drag was considered for M3 and declined: the jump at release is enough.
