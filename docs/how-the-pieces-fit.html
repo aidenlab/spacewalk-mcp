@@ -112,13 +112,17 @@ th { font-weight: 650; }
 
 <header style="display:grid;gap:12px">
   <h1>How spacewalk-mcp fits together</h1>
-  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026. The parts about npm were updated on November 2, 2026, when the remote reached npm.</p>
+  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026. The parts about npm were updated on November 2, 2026, when the remote reached npm. The section on what the remote is was added on November 3, 2026.</p>
 </header>
 
 <div class="answers">
   <div class="answers__item">
     <div class="answers__question">Who uses the remote?</div>
     <p>Two things: the server and the Viewer. The server reads the <code>remote/</code> folder directly. The Viewer gets a copy.</p>
+  </div>
+  <div class="answers__item">
+    <div class="answers__question">Does Claude or ChatGPT talk to the remote?</div>
+    <p>No. The remote covers only the connection between a Viewer and its Room. The conversation talks to the server over MCP, and never sees the remote.</p>
   </div>
   <div class="answers__item">
     <div class="answers__question">Where does npm come in?</div>
@@ -172,6 +176,102 @@ th { font-weight: 650; }
   </figure>
   <p>A <strong>Room</strong> ties one conversation to the Viewers showing it, and it's the only place the current view is recorded. When the model makes a tool call, the Room updates and every Viewer in it redraws. When someone changes something by hand, the Viewer asks the Room to make the change.</p>
   <p><strong>Today, all of this only runs on your laptop.</strong> Nothing is deployed yet. <a href="https://github.com/aidenlab/spacewalk-mcp/issues/11">Issue #11</a> covers the first deployment.</p>
+</section>
+
+<section>
+  <h2>What the remote is</h2>
+  <p>It's easy to picture the remote as something between the conversation and the 3D view. It isn't. Two separate connections are involved, and the remote covers only the second one.</p>
+  <figure>
+    <svg viewBox="0 0 760 250" role="img" aria-label="Claude or ChatGPT talks to the server's MCP tools over MCP; the remote plays no part there. The server's Room and the Viewer's roomAttachment.js talk over a WebSocket, and the remote defines every message on it.">
+      <defs>
+        <marker id="wire-head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="diagram__head" d="M0 0 L10 5 L0 10 z"/></marker>
+        <marker id="wire-head-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path class="diagram__head diagram__head--accent" d="M0 0 L10 5 L0 10 z"/></marker>
+      </defs>
+
+      <rect class="diagram__box" x="10" y="20" width="180" height="170" rx="6"/>
+      <text class="diagram__title" x="100" y="80" text-anchor="middle">Claude or ChatGPT</text>
+      <text class="diagram__text" x="100" y="100" text-anchor="middle">the MCP client</text>
+      <text class="diagram__text" x="100" y="118" text-anchor="middle">the model makes tool calls</text>
+
+      <rect class="diagram__box" x="290" y="20" width="180" height="170" rx="6"/>
+      <text class="diagram__title" x="380" y="42" text-anchor="middle">Server</text>
+      <rect class="diagram__box" x="305" y="54" width="150" height="48" rx="4"/>
+      <text class="diagram__title" x="380" y="74" text-anchor="middle">tools.ts</text>
+      <text class="diagram__text" x="380" y="92" text-anchor="middle">the MCP tools</text>
+      <line class="diagram__line" x1="380" y1="102" x2="380" y2="114" marker-end="url(#wire-head)"/>
+      <rect class="diagram__box diagram__box--accent" x="305" y="116" width="150" height="62" rx="4"/>
+      <text class="diagram__title" x="380" y="138" text-anchor="middle">room.ts, the Room</text>
+      <text class="diagram__label diagram__label--accent" x="380" y="160" text-anchor="middle">uses protocol.ts</text>
+
+      <rect class="diagram__box" x="570" y="20" width="180" height="170" rx="6"/>
+      <text class="diagram__title" x="660" y="42" text-anchor="middle">Viewer</text>
+      <rect class="diagram__box" x="585" y="54" width="150" height="48" rx="4"/>
+      <text class="diagram__title" x="660" y="74" text-anchor="middle">Spacewalk's 3D view</text>
+      <text class="diagram__text" x="660" y="92" text-anchor="middle">the three.js scene</text>
+      <line class="diagram__line" x1="660" y1="114" x2="660" y2="104" marker-end="url(#wire-head)"/>
+      <rect class="diagram__box diagram__box--accent" x="585" y="116" width="150" height="62" rx="4"/>
+      <text class="diagram__title" x="660" y="138" text-anchor="middle">roomAttachment.js</text>
+      <text class="diagram__label diagram__label--accent" x="660" y="160" text-anchor="middle">uses attachRemote</text>
+
+      <line class="diagram__line" x1="192" y1="80" x2="288" y2="80" marker-start="url(#wire-head)" marker-end="url(#wire-head)"/>
+      <text class="diagram__label" x="240" y="70" text-anchor="middle">MCP</text>
+      <text class="diagram__text" x="240" y="98" text-anchor="middle">tool calls</text>
+
+      <line class="diagram__line diagram__line--accent" x1="457" y1="147" x2="583" y2="147" marker-start="url(#wire-head-accent)" marker-end="url(#wire-head-accent)"/>
+      <text class="diagram__label diagram__label--accent" x="520" y="137" text-anchor="middle">WebSocket</text>
+      <text class="diagram__text" x="520" y="168" text-anchor="middle">JSON messages</text>
+
+      <text class="diagram__label" x="240" y="218" text-anchor="middle">1. MCP: the remote plays no part</text>
+      <text class="diagram__label diagram__label--accent" x="520" y="218" text-anchor="middle">2. The remote's connection</text>
+      <text class="diagram__text" x="520" y="236" text-anchor="middle">every message is defined in protocol.ts</text>
+    </svg>
+    <figcaption>A request from the model takes two hops. The tool call reaches the server over MCP. The Room applies it as a change, then sends the new viewer state over the WebSocket to every Viewer. The remote only covers the second hop.</figcaption>
+  </figure>
+  <p>A tool call and a change made by hand in a Viewer both become the same kind of change, a <code>Proposal</code>, which the remote defines. That shared shape is why the two connections can look like one. The conversation never sends or receives a remote message.</p>
+
+  <h3>Two files, two jobs</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th><code>remote/src/protocol.ts</code></th><th><code>remote/src/attachRemote.ts</code></th></tr></thead>
+    <tbody>
+      <tr><th>Think of it as</th><td>A phrasebook: every message either side may send</td><td>A plug that goes into the Viewer</td></tr>
+      <tr><th>What it holds</th><td>Definitions only, no behavior. <code>ViewerMessage</code> lists what a Viewer may send (<code>join</code>, <code>propose</code>, <code>realized</code>, <code>took-camera</code>, <code>highlighted</code> and more). <code>RoomMessage</code> lists what a Room may send (<code>state</code>, <code>camera-moved</code>, <code>highlight-moved</code>, <code>error</code> and more). It also defines the things those messages carry, such as <code>ViewerState</code> and <code>Proposal</code>, and <code>PROTOCOL_VERSION</code>.</td><td>Behavior. It opens the WebSocket, sends <code>join</code> and reconnects after a drop. It passes each incoming state to the Viewer's <code>draw</code> function and reports back once it's drawn. It waits for a slider drag to pause before sending it, and sends highlights about once a frame.</td></tr>
+      <tr><th>Who uses it</th><td>The server and the Viewer</td><td>The Viewer only</td></tr>
+      <tr><th>Runs in</th><td>Both places</td><td>The browser</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>The plug never touches three.js or the page. The Viewer gives it three things: a <code>draw</code> function, its camera and its highlight. In return it gets calls to report what a person does: <code>propose</code>, <code>tookCamera</code>, <code>releasedCamera</code>, <code>highlighted</code> and a few more. <code>spacewalk/src/roomAttachment.js</code> is the code that fills those in from Spacewalk's internals. On the Viewer side, the remote and that file together make the connection, so when you look for "the remote" in <code>spacewalk</code>, open <code>roomAttachment.js</code>.</p>
+
+  <h3>Where it shows up in the code</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>File</th><th>What it takes from the remote</th></tr></thead>
+    <tbody>
+      <tr><td><code>spacewalk-mcp/remote/src/</code></td><td>The source itself: <code>protocol.ts</code>, <code>attachRemote.ts</code> and <code>index.ts</code>, which only re-exports <code>attachRemote</code></td></tr>
+      <tr><td><code>spacewalk-mcp/server/src/room.ts</code></td><td>The phrasebook. It checks every incoming message against <code>ViewerMessage</code> and sends only <code>RoomMessage</code>s. It never calls <code>attachRemote</code>.</td></tr>
+      <tr><td><code>spacewalk-mcp/server/src/tools.ts</code></td><td>Only the <code>Proposal</code> type, so a tool call is the same change as one made by hand</td></tr>
+      <tr><td><code>spacewalk/src/roomAttachment.js</code></td><td>All of it. It calls <code>attachRemote</code>, supplies <code>draw</code>, the camera and the highlight, and sends hand changes with <code>propose</code>.</td></tr>
+      <tr><td><code>spacewalk/src/viewerMain.js</code></td><td>Nothing directly. It calls <code>attachViewerToRoom</code> from <code>roomAttachment.js</code> when the page starts.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>What deployment does to it</h3>
+  <p>The package is TypeScript with no build step of its own. What goes to npm is the same source files that sit in the repo. The changes happen when the server and the Viewer each bundle it:</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th></th><th>Server</th><th>Viewer</th></tr></thead>
+    <tbody>
+      <tr><th>1. Find it</th><td><code>server/package.json</code> asks for <code>"*"</code>. npm links <code>node_modules/@aidenlab/spacewalk-remote</code> back to the <code>remote/</code> folder.</td><td><code>spacewalk/package.json</code> pins an exact version. <code>npm install</code> downloads that version's source into <code>node_modules</code>.</td></tr>
+      <tr><th>2. Bundle it</th><td><code>wrangler deploy</code> follows the import into <code>protocol.ts</code> and copies it into the Worker's single JavaScript file.</td><td>Vite strips the types and bundles all of the remote into the page's JavaScript in <code>dist/</code>.</td></tr>
+      <tr><th>3. Ship it</th><td>The Worker goes to Cloudflare Workers.</td><td>The page goes to Cloudflare Pages.</td></tr>
+      <tr><th>Which version</th><td>Whatever is in the folder when you deploy</td><td>Whatever version is pinned, which may be older</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Once deployed, the remote no longer exists as a separate thing.</strong> Part of it is inside the Worker and all of it is inside the page. What's left to see at runtime is the JSON messages passing over the WebSocket. Since the two copies can come from different versions, the Viewer sends <code>PROTOCOL_VERSION</code> in its first message, <code>join</code>. That's the only check that the two copies still agree, and a mismatch is what shows "This viewer is out of date: reload the viewer."</p>
+  <p>During development you can swap the Viewer's downloaded copy for a link to your <code>remote/</code> folder (see <a href="#what-to-do-when">What to do when</a>). The deploy scripts refuse to build the Viewer while that link is in place, so a deployed page always holds a published version.</p>
 </section>
 
 <section>
@@ -294,7 +394,7 @@ th { font-weight: 650; }
 </section>
 
 <section>
-  <h2>What to do when</h2>
+  <h2 id="what-to-do-when">What to do when</h2>
   <div class="table-wrap">
   <table>
     <thead><tr><th>You want to</th><th>Do this</th></tr></thead>
@@ -350,7 +450,7 @@ th { font-weight: 650; }
       <tr><th>Server</th><td>The code in <code>server/</code>. It runs as a Cloudflare Worker, Cloudflare's name for a small program it hosts. Conversations and Viewers both connect to it.</td></tr>
       <tr><th>Viewer</th><td>The web page showing Spacewalk's 3D view, attached to one Room.</td></tr>
       <tr><th>Room</th><td>What ties one conversation to the Viewers showing it.</td></tr>
-      <tr><th>Remote</th><td>The package <code>@aidenlab/spacewalk-remote</code>, the code in <code>remote/</code>.</td></tr>
+      <tr><th>Remote</th><td>The package <code>@aidenlab/spacewalk-remote</code>, the code in <code>remote/</code>. It defines the connection between a Viewer and its Room, not the one between the conversation and the server.</td></tr>
       <tr><th>Message rules</th><td>The exact form of the messages passed between a Viewer and a Room. The code calls this the protocol.</td></tr>
       <tr><th>Tarball</th><td>A single compressed file holding a folder of code. It ends in <code>.tgz</code>.</td></tr>
       <tr><th>Pin</th><td>Naming one exact version of a package, so everyone installs the same code.</td></tr>
