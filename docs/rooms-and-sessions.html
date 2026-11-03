@@ -196,7 +196,7 @@ td:first-child code { white-space: nowrap; }
       <text class="diagram__text" x="705" y="94" text-anchor="middle">the model's tool calls</text>
       <rect class="diagram__box" x="620" y="180" width="170" height="80" rx="6"/>
       <text class="diagram__title" x="705" y="214" text-anchor="middle">Viewers</text>
-      <text class="diagram__text" x="705" y="234" text-anchor="middle">Driver and Guests</text>
+      <text class="diagram__text" x="705" y="234" text-anchor="middle">Organizer and Guests</text>
       <line class="diagram__line" x1="618" y1="90" x2="542" y2="125" marker-end="url(#head-plain)"/>
       <text class="diagram__label" x="570" y="95" text-anchor="middle">proposals</text>
       <line class="diagram__line" x1="542" y1="175" x2="618" y2="210" marker-start="url(#head-plain)" marker-end="url(#head-plain)"/>
@@ -298,7 +298,7 @@ td:first-child code { white-space: nowrap; }
 
 <section>
   <h2>A meeting in a Room</h2>
-  <p>Here's the scenario this document is mainly for. A Driver opens a Room from a session someone saved last week, and shares the Room link. Guests join, and the group explores with the model and with their own hands. The meeting ends, and someone asks: <strong>what do we want to keep?</strong></p>
+  <p>Here's the scenario this document is mainly for. An Organizer opens a Room from a session someone saved last week, and shares the Room link. Guests join, and the group explores with the model and with their own hands. The meeting ends, and someone asks: <strong>what do we want to keep?</strong></p>
   <figure>
     <svg viewBox="0 0 800 250" role="img" aria-label="A timeline. Before the meeting, a saved session is loaded into a Room. During the meeting the view changes through many versions and only the current one is kept. After the meeting, a save can capture only the final view, until the Room expires a day after its last use.">
       <defs>
@@ -342,9 +342,9 @@ td:first-child code { white-space: nowrap; }
     </svg>
     <figcaption>A save records a single moment. The Room's version number counts changes, but no earlier version can be read back.</figcaption>
   </figure>
-  <p>Shared Rooms are planned for milestone M3, which hasn't started. A second Viewer already gets every change today, but Guests, live camera following and multi-Viewer reporting are still to come.</p>
+  <p>Shared Rooms arrived with milestone M3. Guests join through the Room link and see the same view, followers land on the camera when its holder lets go, and a failure in any Viewer reaches the model's next reply.</p>
   <div class="callout callout--warning">
-    <p><strong>What would actually happen today.</strong> A Guest has no way to save, because saving goes through the Driver's conversation. The Driver has to remember to ask, and must do it before the Room's contents expire. The result opens only on the Viewer page, as a link. If Spacewalk runs inside geenee, the milestone plan also withholds <code>get_shareable_url</code>, which would remove the only way out of the Room.</p>
+    <p><strong>What would actually happen today.</strong> A Guest has no way to save, because saving goes through the Organizer's conversation. The Organizer has to remember to ask, and must do it before the Room's contents expire. The result opens only on the Viewer page, as a link. If Spacewalk runs inside geenee, the milestone plan also withholds <code>get_shareable_url</code>, which would remove the only way out of the Room.</p>
   </div>
 </section>
 
@@ -385,7 +385,7 @@ td:first-child code { white-space: nowrap; }
   <div class="questions">
     <div class="question">
       <h3>Who can save?</h3>
-      <p>Guests are equal to the Driver in what the Viewers show, yet only the Driver's model can save. Should anyone in the Room be able to?</p>
+      <p>Guests are equal to the Organizer in what the Viewers show, yet only the Organizer's model can save. Should anyone in the Room be able to?</p>
       <p class="question__idea">A "Copy link to this view" control in the Viewer would give everyone the same power. M3 leaves roles out of scope, so limiting who can save would need new concepts.</p>
     </div>
     <div class="question">
@@ -448,7 +448,8 @@ td:first-child code { white-space: nowrap; }
     <tbody>
       <tr><th>Room</th><td>What ties one conversation to the Viewers showing its 3D view.</td></tr>
       <tr><th>Viewer</th><td>The web page showing Spacewalk's 3D view, attached to one Room.</td></tr>
-      <tr><th>Driver, Guest</th><td>The person whose conversation a Room belongs to, and anyone who joins through its Room link.</td></tr>
+      <tr><th>Participant</th><td>Anyone with a Room open, the Organizer included.</td></tr>
+      <tr><th>Organizer, Guest</th><td>The Participant whose conversation a Room belongs to, and any other Participant, who joins through its Room link.</td></tr>
       <tr><th>Viewer state</th><td>The Room's one versioned record of what its Viewers show.</td></tr>
       <tr><th>Session</th><td>Spacewalk's saved JSON record of what to restore, with IGV and Juicebox parts when present.</td></tr>
       <tr><th>Session string</th><td>A compressed session payload, the form it takes inside a URL.</td></tr>
