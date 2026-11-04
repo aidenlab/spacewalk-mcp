@@ -141,14 +141,7 @@ node scripts/dev-check.mjs <room> get_shareable_url
 
 `docs/dev-check.md` has more calls and explains the common errors.
 
-Then check in a Host. `scripts/deploy-wizard.sh` covers dev only, so do this by hand:
-
-1. Add a custom Connector named `Spacewalk` with the URL `https://spacewalk-mcp.3dg.io/mcp`. A ChatGPT Connector also needs authentication set to none.
-2. In a new conversation, say "show me an example chromatin trace". A Viewer should open showing a structure.
-3. Say "switch to ribbon". The render style should change.
-4. Ask for a shareable URL and open it in a new tab. It should reopen the same view.
-
-Repeat in each Host the release matters for: Claude desktop, claude.ai, ChatGPT desktop and ChatGPT web. A Claude Connector belongs to the account, so claude.ai gets the one added in Claude desktop.
+Then check in a Host, using the production Connector: see `docs/checking-a-host.md`.
 
 If a ticket depends on this release, record the tag on it before closing it.
 
