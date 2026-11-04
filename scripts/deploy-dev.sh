@@ -10,7 +10,7 @@
 #
 # Runs the tests first and checks the result last. The Viewer page is built from the spacewalk
 # checkout next to this one (SPACEWALK_DIR names another), as it stands, uncommitted changes
-# included. To connect the Hosts and check them as well, use scripts/deploy-wizard.sh.
+# included. To check the Hosts as well, see docs/checking-a-host.md.
 set -euo pipefail
 
 TARGET="${1:-all}"

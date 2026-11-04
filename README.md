@@ -42,8 +42,9 @@ Nothing deploys from CI. Both stacks need a Cloudflare login that can reach the 
 
 ```sh
 scripts/deploy-dev.sh [worker|viewer|all]   # test, deploy to dev, check the result
-scripts/deploy-wizard.sh                    # the same for dev, then connect and check each Host, step by step
 ```
+
+To check the deploy in Claude and ChatGPT, see `docs/checking-a-host.md`.
 
 To release, tag `main` in both repos with the same name, push both tags and deploy that tag:
 
