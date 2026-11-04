@@ -1,0 +1,793 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>How spacewalk-mcp works</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* Layout: one 38rem reading column, notes in the right margin, figures across both. Ink for the Worker and the Host, teal for the Viewer. */
+:root {
+  --bg: #f5f6f4;
+  --box: #ffffff;
+  --fg: #1b1d1c;
+  --muted: #636966;
+  --rule: #cdd2ce;
+  --viewer: #0a6c76;            /* the Viewer's teal */
+  --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151716; --box: #1e2120; --fg: #e5e7e4; --muted: #9aa19c; --rule: #3b403d; --viewer: #62c7d1;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #151716; --box: #1e2120; --fg: #e5e7e4; --muted: #9aa19c; --rule: #3b403d; --viewer: #62c7d1;
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+.page {
+  max-width: 64rem;
+  margin-inline: auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 3.5rem 5rem;
+}
+.page :is(h1, h2, h3, p, ol, ul, .table-wrap) { max-width: 38rem; }
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 2rem;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  margin: 0 0 0.75rem;
+  text-wrap: balance;
+}
+.page__lede {
+  font-size: 1.2rem;
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 2.5rem;
+}
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  margin: 3.25rem 0 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--fg);
+  text-wrap: balance;
+}
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin: 2rem 0 0.5rem;
+}
+p { margin: 0 0 1rem; }
+ol, ul { margin: 0 0 1rem; padding-left: 1.4rem; }
+li { margin-bottom: 0.4rem; }
+code { font-family: var(--mono); font-size: 0.84em; }
+.viewer-ink { color: var(--viewer); }
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 0.15em; }
+a:hover { text-decoration-color: currentColor; }
+a:focus-visible { outline: 2px solid var(--viewer); outline-offset: 2px; }
+
+/* Contents */
+.contents {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  max-width: 38rem;
+  columns: 2 14rem;
+}
+.contents__item { margin: 0 0 0.2rem; break-inside: avoid; }
+.contents__link { text-decoration: none; color: var(--muted); }
+.contents__link:hover { color: var(--fg); }
+
+/* Margin notes */
+.note {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 38rem;
+  margin: 0 0 1rem;
+}
+@media (min-width: 64rem) {
+  .note {
+    float: right;
+    clear: right;
+    width: 17rem;
+    margin: 0.35rem 0 1rem 2rem;
+  }
+}
+
+/* Figures */
+.figure { clear: both; margin: 2rem 0 2.25rem; }
+.figure__scroll { overflow-x: auto; }
+.figure__caption {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--muted);
+  max-width: 38rem;
+  margin-top: 0.75rem;
+}
+.figure__caption b { color: var(--fg); font-weight: 600; }
+.diagram {
+  display: block;
+  width: 100%;
+  min-width: 46rem;
+  height: auto;
+  color: var(--fg);
+  font-family: var(--sans);
+}
+.diagram text { fill: currentColor; font-size: 12.5px; }
+.diagram .diagram__title { font-weight: 600; }
+.diagram .diagram__small { font-size: 10.5px; fill: var(--muted); }
+.diagram .diagram__mono { font-family: var(--mono); font-size: 11px; }
+.diagram .diagram__step { font-size: 11px; font-weight: 600; fill: var(--muted); }
+.diagram .diagram__band { font-size: 10px; font-weight: 600; letter-spacing: 0.12em; fill: var(--muted); }
+.diagram .diagram__tag { font-size: 11px; font-weight: 600; fill: var(--muted); }
+.diagram .diagram__knockout { paint-order: stroke; stroke: var(--bg); stroke-width: 5px; stroke-linejoin: round; }
+.diagram .diagram__viewer-ink { fill: var(--viewer); }
+.diagram__box { fill: var(--box); stroke: currentColor; stroke-width: 1; }
+.diagram__box--main { stroke-width: 1.75; }
+.diagram__box--viewer { stroke: var(--viewer); stroke-width: 1.25; }
+.diagram__box--outside { fill: none; stroke: var(--rule); }
+.diagram__window { fill: none; stroke: var(--muted); stroke-width: 1; }
+.diagram__divider { stroke: var(--rule); stroke-width: 1; stroke-dasharray: 2 4; }
+.diagram__lifeline { stroke: var(--rule); stroke-width: 1; }
+.diagram__gap { stroke: var(--bg); stroke-width: 9; fill: none; }
+/* Wires: thin is a request and its reply, thick a WebSocket that stays open, dashed a page fetched once. */
+.diagram__wire { stroke: currentColor; stroke-width: 1; fill: none; }
+.diagram__wire--socket { stroke-width: 2.75; }
+.diagram__wire--page { stroke-dasharray: 5 4; }
+.diagram__wire--viewer { stroke: var(--viewer); }
+
+/* Key to the line styles */
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.75rem;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.9rem 0 0;
+  max-width: 50rem;
+}
+.key__item { display: inline-flex; align-items: center; gap: 0.5rem; }
+.key__swatch { width: 34px; height: 8px; color: var(--fg); }
+
+/* Tables */
+.table-wrap { overflow-x: auto; margin: 1.25rem 0 1.5rem; }
+.page .table-wrap--wide { max-width: 64rem; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.5rem 1.1rem 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+thead th { font-weight: 600; border-bottom: 1px solid var(--fg); }
+tbody th { font-weight: 600; white-space: nowrap; }
+tbody tr:last-child :is(th, td) { border-bottom: 0; }
+td code, th code { font-size: 0.92em; }
+.data-table__step { font-weight: 600; color: var(--muted); width: 1.5rem; }
+.data-table__how { white-space: nowrap; }
+.page__end {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 3.5rem;
+  max-width: 38rem;
+}
+</style>
+</head>
+<body>
+
+<!-- Arrowheads shared by every figure. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0.5 L8 4 L0 7.5z" style="fill: var(--fg)"/></marker>
+    <marker id="arrow-viewer" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0.5 L8 4 L0 7.5z" style="fill: var(--viewer)"/></marker>
+    <marker id="arrow-small" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0.5 L8 4 L0 7.5z" style="fill: var(--fg)"/></marker>
+    <marker id="arrow-small-viewer" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0.5 L8 4 L0 7.5z" style="fill: var(--viewer)"/></marker>
+  </defs>
+</svg>
+
+<main class="page">
+
+<h1>How spacewalk-mcp works</h1>
+<p class="page__lede">A Cloudflare Worker, its Rooms, a web page and a model cooperate so that a person can drive Spacewalk’s 3D chromatin viewer from a conversation, and so that anyone given the Room link can watch and change the same view. This document shows what each part is, which wires join them, and what crosses each wire.</p>
+
+<ul class="contents">
+  <li class="contents__item"><a class="contents__link" href="#parts">The parts and the wires</a></li>
+  <li class="contents__item"><a class="contents__link" href="#room">One Room id, three ways in</a></li>
+  <li class="contents__item"><a class="contents__link" href="#open">Scenario: “open Spacewalk”</a></li>
+  <li class="contents__item"><a class="contents__link" href="#load">Scenario: “load the A549 example”</a></li>
+  <li class="contents__item"><a class="contents__link" href="#hand">When a person changes the view</a></li>
+  <li class="contents__item"><a class="contents__link" href="#together">Several Viewers, one camera, one highlight</a></li>
+  <li class="contents__item"><a class="contents__link" href="#server">Calls that are not a plain change</a></li>
+  <li class="contents__item"><a class="contents__link" href="#state">What each part keeps</a></li>
+  <li class="contents__item"><a class="contents__link" href="#wrong">When something goes wrong</a></li>
+  <li class="contents__item"><a class="contents__link" href="#addresses">Addresses</a></li>
+</ul>
+
+<h2 id="parts">The parts and the wires</h2>
+
+<figure class="figure">
+  <div class="figure__scroll">
+  <svg class="diagram" viewBox="0 0 1000 660" role="img" aria-label="Map of spacewalk-mcp. On the internet: the Host's servers, the spacewalk-mcp Worker with its Room, the ensemble hosts, the link shortener, and the static site that serves the Viewer page. On the Organizer's computer: the Host app, with the conversation holding the Join card, and the Side panel holding a Viewer, which houses Spacewalk's 3D view and spacewalk-remote. On a Guest's computer: a browser holding a second Viewer of the same Room. Wires A to H join them.">
+
+    <text class="diagram__band" x="20" y="24">ON THE INTERNET</text>
+    <line class="diagram__divider" x1="0" y1="352" x2="1000" y2="352"/>
+    <text class="diagram__band diagram__knockout" x="20" y="372">ON THE ORGANIZER’S COMPUTER</text>
+    <text class="diagram__band diagram__knockout" x="765" y="372">ON A GUEST’S COMPUTER</text>
+
+    <!-- Host's servers -->
+    <rect class="diagram__box" x="20" y="60" width="180" height="110"/>
+    <text class="diagram__title" x="110" y="100" text-anchor="middle">Host</text>
+    <text class="diagram__small" x="110" y="120" text-anchor="middle">Claude or ChatGPT,</text>
+    <text class="diagram__small" x="110" y="135" text-anchor="middle">on its maker’s servers;</text>
+    <text class="diagram__small" x="110" y="150" text-anchor="middle">runs the model</text>
+
+    <!-- The Worker -->
+    <rect class="diagram__box diagram__box--main" x="290" y="60" width="220" height="198"/>
+    <text class="diagram__title" x="400" y="85" text-anchor="middle">spacewalk-mcp Worker</text>
+    <text class="diagram__small diagram__mono" x="400" y="102" text-anchor="middle">spacewalk-mcp-dev.3dg.io</text>
+    <text class="diagram__mono" x="306" y="132" style="font-size:10.5px">/mcp</text>
+    <text class="diagram__small" x="350" y="132">14 tools, for the Host</text>
+    <text class="diagram__mono" x="306" y="152" style="font-size:10.5px">/ws</text>
+    <text class="diagram__small" x="350" y="152">for Viewers</text>
+    <rect class="diagram__box" x="304" y="190" width="192" height="56"/>
+    <text class="diagram__title" x="400" y="208" text-anchor="middle" style="font-size:11.5px">Room</text>
+    <text class="diagram__small" x="400" y="223" text-anchor="middle">a Durable Object per id;</text>
+    <text class="diagram__small" x="400" y="237" text-anchor="middle">holds the viewer state</text>
+
+    <!-- Ensemble hosts -->
+    <rect class="diagram__box diagram__box--outside" x="600" y="60" width="190" height="95"/>
+    <text class="diagram__title" x="695" y="88" text-anchor="middle">Ensemble hosts</text>
+    <text class="diagram__small" x="695" y="108" text-anchor="middle">Spacewalk’s R2 bucket,</text>
+    <text class="diagram__small" x="695" y="123" text-anchor="middle">and any other host</text>
+    <text class="diagram__small" x="695" y="138" text-anchor="middle">a <tspan class="diagram__mono" style="font-size:10.5px">.sw</tspan> URL names</text>
+
+    <!-- Link shortener -->
+    <rect class="diagram__box diagram__box--outside" x="825" y="60" width="150" height="75"/>
+    <text class="diagram__title" x="900" y="88" text-anchor="middle">Link shortener</text>
+    <text class="diagram__small" x="900" y="106" text-anchor="middle">spacewalk.aidenlab.org;</text>
+    <text class="diagram__small" x="900" y="121" text-anchor="middle">t.3dg.io, tinyurl.com</text>
+
+    <!-- Viewer page site -->
+    <rect class="diagram__box diagram__box--outside" x="540" y="232" width="120" height="56"/>
+    <text class="diagram__small" x="600" y="255" text-anchor="middle" style="fill: var(--fg)">Viewer page</text>
+    <text class="diagram__small" x="600" y="271" text-anchor="middle">static site</text>
+
+    <!-- The Organizer's computer -->
+    <rect class="diagram__window" x="20" y="384" width="725" height="260"/>
+    <line class="diagram__window" x1="20" y1="406" x2="745" y2="406"/>
+    <text class="diagram__small" x="32" y="399">Host app: Claude desktop, or ChatGPT</text>
+    <line class="diagram__window" x1="270" y1="406" x2="270" y2="644"/>
+    <text x="145" y="452" text-anchor="middle">Conversation</text>
+    <text class="diagram__small" x="145" y="470" text-anchor="middle">the person and the model</text>
+    <rect class="diagram__box" x="45" y="500" width="200" height="92"/>
+    <text class="diagram__title" x="145" y="526" text-anchor="middle">Join card</text>
+    <text class="diagram__small" x="145" y="544" text-anchor="middle">an MCP App: one line</text>
+    <text class="diagram__small" x="145" y="559" text-anchor="middle">of status and an</text>
+    <text class="diagram__small" x="145" y="574" text-anchor="middle">Open Spacewalk button</text>
+    <text class="diagram__small" x="286" y="424">Side panel</text>
+
+    <rect class="diagram__box diagram__box--viewer" x="286" y="432" width="444" height="196"/>
+    <text class="diagram__title diagram__viewer-ink" x="302" y="456">Viewer</text>
+    <text class="diagram__small diagram__mono" x="302" y="473">spacewalk-viewer-dev.pages.dev/viewer.html?room=7KQ2M9XA4T</text>
+
+    <rect class="diagram__box" x="302" y="492" width="190" height="120"/>
+    <text class="diagram__title" x="397" y="520" text-anchor="middle" style="font-size:11.5px">spacewalk-remote</text>
+    <text class="diagram__small" x="397" y="540" text-anchor="middle">attachRemote, wired in by</text>
+    <text class="diagram__small diagram__mono" x="397" y="555" text-anchor="middle" style="font-size:10px">roomAttachment.js:</text>
+    <text class="diagram__small" x="397" y="572" text-anchor="middle">joins, draws each version,</text>
+    <text class="diagram__small" x="397" y="587" text-anchor="middle">proposes hand changes</text>
+
+    <rect class="diagram__box" x="508" y="492" width="206" height="120"/>
+    <text class="diagram__title" x="611" y="545" text-anchor="middle">Spacewalk’s 3D view</text>
+    <text class="diagram__small" x="611" y="563" text-anchor="middle">three.js; its camera rig</text>
+    <text class="diagram__small" x="611" y="578" text-anchor="middle">owns the camera pose</text>
+
+    <!-- A Guest's computer -->
+    <rect class="diagram__window" x="765" y="384" width="210" height="260"/>
+    <line class="diagram__window" x1="765" y1="406" x2="975" y2="406"/>
+    <text class="diagram__small" x="777" y="399">A browser</text>
+    <rect class="diagram__box diagram__box--viewer" x="779" y="420" width="182" height="208"/>
+    <text class="diagram__title diagram__viewer-ink" x="795" y="444">Viewer</text>
+    <text class="diagram__small" x="795" y="466">a Guest’s, opened from</text>
+    <text class="diagram__small" x="795" y="481">the same Room link;</text>
+    <text class="diagram__small" x="795" y="496">no conversation, no model</text>
+
+    <!-- H: the conversation -->
+    <line class="diagram__wire" x1="110" y1="171" x2="110" y2="434" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text class="diagram__tag diagram__knockout" x="118" y="290">H</text>
+    <text class="diagram__small diagram__knockout" x="130" y="290">messages</text>
+
+    <!-- A: tool calls -->
+    <line class="diagram__wire" x1="201" y1="112" x2="289" y2="112" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text class="diagram__knockout" x="245" y="104" text-anchor="middle" style="font-size:11px"><tspan class="diagram__tag">A</tspan>  tool calls</text>
+
+    <!-- E: the Worker's read of the example list -->
+    <line class="diagram__wire" x1="599" y1="112" x2="512" y2="112" marker-end="url(#arrow)"/>
+    <text class="diagram__tag diagram__knockout" x="520" y="104">E</text>
+    <text class="diagram__small diagram__knockout" x="532" y="104">example list</text>
+
+    <!-- F: the Worker and the link shortener -->
+    <path class="diagram__wire" d="M480 59 V42 H900 V59" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <text class="diagram__tag diagram__knockout" x="640" y="37">F</text>
+    <text class="diagram__small diagram__knockout" x="652" y="37">short links</text>
+
+    <!-- D: the Viewer's own ensembles -->
+    <line class="diagram__wire diagram__wire--viewer" x1="690" y1="156" x2="690" y2="430" marker-end="url(#arrow-viewer)"/>
+    <text class="diagram__tag diagram__knockout" x="698" y="300">D</text>
+    <text class="diagram__small diagram__knockout" x="710" y="300"><tspan class="diagram__mono" style="font-size:10.5px">.sw</tspan> files</text>
+
+    <!-- C: the Viewer's page files -->
+    <line class="diagram__wire diagram__wire--page diagram__wire--viewer" x1="600" y1="289" x2="600" y2="430" marker-end="url(#arrow-viewer)"/>
+    <text class="diagram__tag diagram__knockout" x="608" y="330">C</text>
+    <text class="diagram__small diagram__knockout" x="608" y="346">page</text>
+
+    <!-- B: the Room's socket to the Organizer's Viewer -->
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="400" y1="247" x2="400" y2="430" marker-start="url(#arrow-small-viewer)" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__tag diagram__knockout" x="408" y="300">B</text>
+    <text class="diagram__small diagram__knockout" x="420" y="300">viewer state down;</text>
+    <text class="diagram__small diagram__knockout" x="420" y="314">proposals and</text>
+    <text class="diagram__small diagram__knockout" x="420" y="328">reports up</text>
+
+    <!-- B: the same, to the Guest's Viewer, hopping over D -->
+    <path class="diagram__gap" d="M682 215 H698"/>
+    <path class="diagram__wire diagram__wire--socket diagram__wire--viewer" d="M497 215 H870 V418" marker-start="url(#arrow-small-viewer)" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__tag diagram__knockout" x="878" y="300">B</text>
+    <text class="diagram__small diagram__knockout" x="890" y="300">the same,</text>
+    <text class="diagram__small diagram__knockout" x="890" y="314">to every Viewer</text>
+
+    <!-- G: the Join card asks the Host to open the Room link -->
+    <line class="diagram__wire" x1="246" y1="546" x2="284" y2="546" marker-end="url(#arrow)"/>
+    <text class="diagram__tag diagram__knockout" x="254" y="538">G</text>
+  </svg>
+  </div>
+  <div class="key" aria-hidden="true">
+    <span class="key__item"><svg class="key__swatch" viewBox="0 0 34 8"><line x1="0" y1="4" x2="34" y2="4" stroke="currentColor" stroke-width="1"/></svg>a request and its reply, over HTTPS</span>
+    <span class="key__item"><svg class="key__swatch" viewBox="0 0 34 8"><line x1="0" y1="4" x2="34" y2="4" stroke="currentColor" stroke-width="2.75"/></svg>a WebSocket that stays open</span>
+    <span class="key__item"><svg class="key__swatch" viewBox="0 0 34 8"><line x1="0" y1="4" x2="34" y2="4" stroke="currentColor" stroke-width="1" stroke-dasharray="5 4"/></svg>page files, fetched once when a page opens</span>
+  </div>
+  <figcaption class="figure__caption"><b>Figure 1.</b> Every part and every wire. Teal belongs to the Viewers; black is the Worker’s and the Host’s. Arrowheads show which way the content flows. The Side panel is Claude desktop’s built-in browser pane; where a Host has none, the Viewer is a browser tab, and nothing else changes. The Guest’s Viewer has a C and a D of its own, which are not drawn. Of the parts on the internet, the Worker is a Cloudflare Worker and the Viewer page is a Cloudflare Pages site; the ensemble hosts and the link shortener belong to Spacewalk and others. The Join card also loads its MCP Apps client from <code>unpkg.com</code>, which is not drawn.</figcaption>
+</figure>
+
+<aside class="note">The Host’s requests to the Worker come from Anthropic’s or OpenAI’s servers, not from the person’s computer. That is why the Worker needs a public <code>https://</code> address, and why a Worker running on a laptop cannot be tried in those Hosts without a tunnel.</aside>
+
+<p>Two things carry the whole design. First, the Room, not the Viewer, is the record of what is shown. Each Room holds one versioned viewer state. A tool call and a person’s hand change are both proposals, which only the Room applies, and every Viewer is a replica that draws what the Room broadcasts (ADR 0001). So a change takes effect even with no Viewer open. Second, the Worker draws nothing and cannot reach a Viewer by itself. Spacewalk runs only in the Viewer, a web page, which fetches its <code>.sw</code> files itself and opens a WebSocket to the Room named in its Room link. The Room sends every version down that socket.</p>
+
+<p>So a change from the model crosses two wires on the way out (<b>A</b>, then <b>B</b>) and the same two on the way back, the second time as a Viewer’s report that it has realized the version. Everything else in the figure exists to set those wires up, to feed Spacewalk its ensembles, and to carry the two things a Room deliberately does not keep: the camera and the highlight.</p>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th class="data-table__step"></th><th>Between</th><th>How</th><th>What crosses it</th><th>When</th></tr></thead>
+  <tbody>
+    <tr><td class="data-table__step">A</td><td>Host and Worker</td><td class="data-table__how">POST <code>/mcp</code></td><td>MCP JSON-RPC. <code>initialize</code>, <code>tools/list</code> and <code>tools/call</code>; <code>resources/read</code> for the Join card. Each is answered at once, as JSON; there is no event stream and no <code>mcp-session-id</code>. Every call except the first <code>open_viewer</code> names the Room id in its <code>room</code> argument.</td><td>Each time the model uses a tool.</td></tr>
+    <tr><td class="data-table__step viewer-ink">B</td><td>Room and each Viewer</td><td class="data-table__how">WebSocket <code>/ws?room=</code></td><td>Up: <code>join</code>, with the protocol version; <code>propose</code>, with a hand change; <code>realized</code>, for each version drawn or failed; and the camera and highlight messages. Down: <code>state</code>, the viewer state at a version, after every change and on every join; <code>error</code>, when the Room refuses the Viewer or a message; and other Viewers’ camera and highlight messages. Every message is defined in <code>remote/src/protocol.ts</code>.</td><td>Opened by each Viewer when it loads. Stays open, and is reopened when it drops.</td></tr>
+    <tr><td class="data-table__step viewer-ink">C</td><td>Viewer page site and Viewer</td><td class="data-table__how">GET</td><td><code>viewer.html</code>, its scripts and styles, spacewalk-remote among them.</td><td>Once, when the Room link opens.</td></tr>
+    <tr><td class="data-table__step viewer-ink">D</td><td>Ensemble hosts and Viewer</td><td class="data-table__how">GET</td><td><code>.sw</code> files. Spacewalk fetches each one itself, from the URL the viewer state names.</td><td>When a version names an ensemble the Viewer is not showing.</td></tr>
+    <tr><td class="data-table__step">E</td><td>Ensemble hosts and Worker</td><td class="data-table__how">GET</td><td>The example list, <code>load-from-list.json</code> in Spacewalk’s R2 bucket: the full app’s Load From List. It is kept for five minutes.</td><td>When the model asks for the examples.</td></tr>
+    <tr><td class="data-table__step">F</td><td>Worker and link shortener</td><td class="data-table__how">POST, GET</td><td>A snapshot URL to shorten, for <code>get_shareable_url</code>. A short URL to follow, for <code>load_session</code>: the Worker reads where it redirects and goes no further.</td><td>When those two tools need it.</td></tr>
+    <tr><td class="data-table__step">G</td><td>Join card and Host app</td><td class="data-table__how">MCP Apps messages</td><td>Down: <code>open_viewer</code>’s result, the Room id and the Room link. Up: <code>ui/open-link</code> with the Room link, when Open Spacewalk is pressed.</td><td>Once per <code>open_viewer</code>.</td></tr>
+    <tr><td class="data-table__step">H</td><td>Host app and Host servers</td><td class="data-table__how">the Host’s own</td><td>The conversation. The Worker never sees it.</td><td>Always.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Three wires are missing on purpose. The Worker never serves the Viewer: anything but <code>/mcp</code> and <code>/ws</code> is answered 404, and the page comes from its own site. The Join card never holds the 3D viewer: the Host’s sandbox forbids framing another site, so the card carries a link and a button and nothing more. And a Viewer never calls <code>/mcp</code> and never talks to another Viewer: it reaches the Worker, and the other Viewers, only through its Room’s socket.</p>
+
+<h2 id="room">One Room id, three ways in</h2>
+
+<p>A Room ties one conversation to the Viewers showing its 3D view. It is a Cloudflare Durable Object, one per Room id, and the id is ten Crockford base32 characters, short enough to sit in a Room link and long enough to be unguessable. A tool call can name its Room in two ways, and <code>open_viewer</code> has a third. The Worker takes the first it finds.</p>
+
+<figure class="figure">
+  <div class="figure__scroll">
+  <svg class="diagram" viewBox="0 0 1000 214" role="img" aria-label="Three ways a tool call reaches its Room: the room argument, the x-openai-session header by HMAC, or a new id minted by open_viewer. All lead to one Room, 7KQ2M9XA4T, which every Viewer also reaches through the room in its Room link.">
+    <rect class="diagram__box diagram__box--main" x="20" y="14" width="250" height="52"/>
+    <text class="diagram__title" x="145" y="36" text-anchor="middle">the <tspan class="diagram__mono">room</tspan> argument</text>
+    <text class="diagram__small" x="145" y="54" text-anchor="middle">carried by the model; first</text>
+
+    <rect class="diagram__box" x="20" y="80" width="250" height="52"/>
+    <text class="diagram__title" x="145" y="102" text-anchor="middle">the <tspan class="diagram__mono">x-openai-session</tspan> header</text>
+    <text class="diagram__small" x="145" y="120" text-anchor="middle">by HMAC, for ChatGPT; else</text>
+
+    <rect class="diagram__box" x="20" y="146" width="250" height="52"/>
+    <text class="diagram__title" x="145" y="168" text-anchor="middle">a new Room id</text>
+    <text class="diagram__small" x="145" y="186" text-anchor="middle">minted by <tspan class="diagram__mono" style="font-size:10.5px">open_viewer</tspan> alone; else</text>
+
+    <path class="diagram__wire" d="M271 40 H320 V100 H378" marker-end="url(#arrow)"/>
+    <line class="diagram__wire" x1="271" y1="106" x2="378" y2="106" marker-end="url(#arrow)"/>
+    <path class="diagram__wire" d="M271 172 H320 V112 H378" marker-end="url(#arrow)"/>
+
+    <rect class="diagram__box diagram__box--main" x="380" y="66" width="220" height="80"/>
+    <text class="diagram__title" x="490" y="90" text-anchor="middle">Room</text>
+    <text class="diagram__mono" x="490" y="112" text-anchor="middle" style="font-size:14px;font-weight:500">7KQ2M9XA4T</text>
+    <text class="diagram__small" x="490" y="132" text-anchor="middle">one Durable Object</text>
+
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="758" y1="106" x2="603" y2="106" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__small diagram__knockout diagram__viewer-ink" x="680" y="96" text-anchor="middle"><tspan class="diagram__mono">/ws?room=</tspan></text>
+
+    <rect class="diagram__box diagram__box--viewer" x="760" y="66" width="220" height="80"/>
+    <text class="diagram__title diagram__viewer-ink" x="870" y="90" text-anchor="middle">Every Viewer</text>
+    <text class="diagram__small" x="870" y="110" text-anchor="middle">reads <tspan class="diagram__mono">?room=</tspan> from</text>
+    <text class="diagram__small" x="870" y="125" text-anchor="middle">the Room link it opened</text>
+  </svg>
+  </div>
+  <figcaption class="figure__caption"><b>Figure 2.</b> How a tool call and every Viewer reach the same Room. The model’s <code>room</code> argument wins over the header. Only <code>open_viewer</code>, given neither, mints a new id; any other tool given neither is refused. A Viewer is never told the id by the Worker: it reads it from the address it was opened at.</figcaption>
+</figure>
+
+<aside class="note">ChatGPT sends <code>x-openai-session</code> on every request. The Worker turns it into a Room id with HMAC-SHA256 under the <code>SESSION_HMAC_SECRET</code> secret, so one ChatGPT conversation always comes to the same Room, and the raw value never appears in a link. Claude sends no such header.</aside>
+
+<p>The Room id comes from the model on every call because the Worker keeps no MCP session: each request is answered by a fresh MCP server and then forgotten. The model is the one thing that stays with the conversation, so <code>open_viewer</code>’s reply tells it to pass the id as <code>room</code> on every later call.</p>
+
+<p><code>open_viewer</code> accepts any well-formed id. A live Room keeps what it holds, so opening it again gets the same view back. An id never opened before opens that Room, empty, which lets a Connector that composes several servers mint the id itself. Every other tool refuses a Room that was never opened, so a mistyped id is caught there.</p>
+
+<h2 id="open">Scenario: “open Spacewalk”</h2>
+
+<p>The person types “open Spacewalk”. The model calls <code>open_viewer</code>, and a few steps later the Viewer shows an empty scene, in step with its Room. Only the first step involves the model.</p>
+
+<figure class="figure">
+  <div class="figure__scroll">
+  <svg class="diagram" viewBox="0 0 1000 490" role="img" aria-label="Sequence for opening Spacewalk, with time running downward, across six lifelines: Host, Join card, Worker, Room, Viewer page site, Viewer.">
+    <text class="diagram__title" x="70" y="32" text-anchor="middle">Host</text>
+    <text class="diagram__title" x="210" y="32" text-anchor="middle">Join card</text>
+    <text class="diagram__title" x="350" y="32" text-anchor="middle">Worker</text>
+    <text class="diagram__title" x="500" y="32" text-anchor="middle">Room</text>
+    <text class="diagram__title diagram__viewer-ink" x="680" y="32" text-anchor="middle">Viewer page site</text>
+    <text class="diagram__title diagram__viewer-ink" x="860" y="32" text-anchor="middle">Viewer</text>
+    <line class="diagram__lifeline" x1="70" y1="46" x2="70" y2="480"/>
+    <line class="diagram__lifeline" x1="210" y1="46" x2="210" y2="480"/>
+    <line class="diagram__lifeline" x1="350" y1="46" x2="350" y2="480"/>
+    <line class="diagram__lifeline" x1="500" y1="46" x2="500" y2="480"/>
+    <line class="diagram__lifeline" x1="680" y1="46" x2="680" y2="480"/>
+    <line class="diagram__lifeline" x1="860" y1="46" x2="860" y2="480"/>
+
+    <!-- 1 -->
+    <text class="diagram__step" x="12" y="86">1</text>
+    <line class="diagram__wire" x1="70" y1="82" x2="349" y2="82" marker-end="url(#arrow-small)"/>
+    <text class="diagram__mono diagram__knockout" x="210" y="76" text-anchor="middle">open_viewer</text>
+
+    <!-- 2 -->
+    <text class="diagram__step" x="12" y="124">2</text>
+    <line class="diagram__wire" x1="350" y1="120" x2="499" y2="120" marker-end="url(#arrow-small)"/>
+    <text class="diagram__mono diagram__knockout" x="425" y="114" text-anchor="middle">open</text>
+    <line class="diagram__wire" x1="500" y1="146" x2="351" y2="146" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="425" y="140" text-anchor="middle" style="font-size:11.5px">version 0</text>
+    <text class="diagram__small" x="508" y="136">an empty viewer state</text>
+
+    <!-- 3 -->
+    <text class="diagram__step" x="12" y="194">3</text>
+    <line class="diagram__wire" x1="350" y1="190" x2="71" y2="190" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="210" y="184" text-anchor="middle" style="font-size:11.5px">Room link, Room id, viewer state</text>
+
+    <!-- 4 -->
+    <text class="diagram__step" x="12" y="238">4</text>
+    <line class="diagram__wire" x1="70" y1="234" x2="209" y2="234" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="140" y="228" text-anchor="middle" style="font-size:11.5px">tool result</text>
+    <text class="diagram__small" x="218" y="238">shows Open Spacewalk</text>
+
+    <!-- 5 -->
+    <text class="diagram__step" x="12" y="282">5</text>
+    <line class="diagram__wire diagram__wire--page" x1="70" y1="278" x2="859" y2="278" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="590" y="272" text-anchor="middle" style="font-size:11.5px">opens the Room link in the Side panel</text>
+
+    <!-- 6 -->
+    <text class="diagram__step" x="12" y="322">6</text>
+    <line class="diagram__wire diagram__wire--page diagram__wire--viewer" x1="680" y1="318" x2="857" y2="318" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="770" y="312" text-anchor="middle" style="font-size:11.5px">viewer.html</text>
+
+    <!-- 7 -->
+    <text class="diagram__step" x="12" y="366">7</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="860" y1="362" x2="503" y2="362" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="680" y="355" text-anchor="middle" style="font-size:11.5px">join, protocol 2</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="500" y1="392" x2="857" y2="392" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="680" y="385" text-anchor="middle" style="font-size:11.5px">state, version 0</text>
+    <text class="diagram__small" x="868" y="416">draws an empty scene</text>
+
+    <!-- 8 -->
+    <text class="diagram__step" x="12" y="454">8</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="860" y1="450" x2="503" y2="450" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="680" y="443" text-anchor="middle" style="font-size:11.5px">realized, version 0, drawn</text>
+    <text class="diagram__small" x="508" y="474">keeps the report</text>
+  </svg>
+  </div>
+  <figcaption class="figure__caption"><b>Figure 3.</b> Opening Spacewalk, with time running downward. Steps 1 to 5 happen once per <code>open_viewer</code>; steps 6 to 8 every time anyone opens the Room link. From step 8 on, the Viewer draws every version the Room sends.</figcaption>
+</figure>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th class="data-table__step"></th><th>Wire</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td class="data-table__step">1</td><td>A</td><td>The Host posts <code>tools/call</code> for <code>open_viewer</code>, with no <code>room</code> the first time. Before that it has posted <code>initialize</code> and <code>tools/list</code>, which the Worker answers like any request, storing nothing.</td></tr>
+    <tr><td class="data-table__step">2</td><td></td><td>The Worker takes the Room id it was given, or ChatGPT’s, or mints a new one, and asks that Room to open. A Room never opened starts at version 0 with Spacewalk’s defaults and nothing loaded; a live Room keeps what it holds. Either way it now expires a day after its last use.</td></tr>
+    <tr><td class="data-table__step">3</td><td>A</td><td>The Worker replies with the Room link, <code>https://spacewalk-viewer-dev.pages.dev/viewer.html?room=7KQ2M9XA4T</code>, the Room id and the viewer state. The reply tells the model to open the link in Claude desktop’s built-in browser if it has one, and in no other browser tool; to pass the Room id on every later call; and to repeat neither to the person. No Viewer is contacted.</td></tr>
+    <tr><td class="data-table__step">4</td><td>A, G</td><td>A Host that renders MCP Apps reads the Join card from the Worker and hands it the result. In Claude desktop the card says Spacewalk is opening in the panel on the right, and offers Open Spacewalk in case it does not; elsewhere it says Spacewalk is ready. Other Hosts show the text link.</td></tr>
+    <tr><td class="data-table__step">5</td><td></td><td>The model opens the Room link in Claude desktop’s Side panel. Where it cannot, the person presses Open Spacewalk, and the card asks the Host to open the link; Claude desktop routes it to its Side panel. Where a Host has no Side panel, the link opens in a browser tab, and everything after works unchanged.</td></tr>
+    <tr><td class="data-table__step">6</td><td>C</td><td>The Side panel fetches <code>viewer.html</code> from its static site: Spacewalk’s 3D viewer filling the window, with no navbar, no IGV and no Juicebox.</td></tr>
+    <tr><td class="data-table__step">7</td><td>B</td><td>The Viewer reads the Room id from its own address and opens a WebSocket to <code>/ws?room=</code> on the Worker it was built for. The Worker refuses any <code>Origin</code> not on <code>VIEWER_ORIGINS</code> and hands the socket to the Room. The Viewer sends <code>join</code> with its protocol version, and the Room answers with <code>state</code>: the viewer state at its current version.</td></tr>
+    <tr><td class="data-table__step">8</td><td>B</td><td>The Viewer draws that state, here nothing loaded and Spacewalk’s default viewer settings, and reports version 0 realized. The Room keeps the report.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<aside class="note">A Room link opened later, in the Side panel again or by a Guest in any browser, repeats steps 6 to 8 and nothing else. The model is not involved and is not told, except that its next reply counts one Viewer more.</aside>
+
+<p>A Viewer that joins draws the Room’s current version, whatever it is. That is how a reload, a reconnect and a Guest arriving late all come to show the same view: each is a resync, and none of them restores anything of its own.</p>
+
+<h2 id="load">Scenario: “load the A549 example”</h2>
+
+<p>With Spacewalk open, the person asks for the A549 example. The model calls <code>list_example_ensembles</code>, which reads the full app’s Load From List along E, finds the A549 file’s URL there, and calls <code>load_ensemble</code> with it. The second call travels out along A and B, and its answer returns along the same wires, carrying the whole viewer state with it.</p>
+
+<figure class="figure">
+  <div class="figure__scroll">
+  <svg class="diagram" viewBox="0 0 1000 402" role="img" aria-label="Sequence for one change: Host to Worker, Worker to Room, Room to Viewer, the Viewer fetches the .sw file and draws it, and its realized report returns to the Room, which answers the Worker, which answers the Host.">
+    <text class="diagram__title" x="70" y="32" text-anchor="middle">Host</text>
+    <text class="diagram__title" x="250" y="32" text-anchor="middle">Worker</text>
+    <text class="diagram__title" x="440" y="32" text-anchor="middle">Room</text>
+    <text class="diagram__title diagram__viewer-ink" x="660" y="32" text-anchor="middle">Viewer</text>
+    <text class="diagram__title" x="900" y="32" text-anchor="middle" style="opacity:.6">Ensemble hosts</text>
+    <line class="diagram__lifeline" x1="70" y1="46" x2="70" y2="392"/>
+    <line class="diagram__lifeline" x1="250" y1="46" x2="250" y2="392"/>
+    <line class="diagram__lifeline" x1="440" y1="46" x2="440" y2="392"/>
+    <line class="diagram__lifeline" x1="660" y1="46" x2="660" y2="392"/>
+    <line class="diagram__lifeline" x1="900" y1="46" x2="900" y2="392"/>
+
+    <!-- 1 -->
+    <text class="diagram__step" x="12" y="86">1</text>
+    <line class="diagram__wire" x1="70" y1="82" x2="249" y2="82" marker-end="url(#arrow-small)"/>
+    <text class="diagram__mono diagram__knockout" x="160" y="76" text-anchor="middle">load_ensemble  url, room</text>
+
+    <!-- 2 -->
+    <text class="diagram__step" x="12" y="124">2</text>
+    <line class="diagram__wire" x1="250" y1="120" x2="439" y2="120" marker-end="url(#arrow-small)"/>
+    <text class="diagram__mono diagram__knockout" x="345" y="114" text-anchor="middle">propose</text>
+    <text class="diagram__small" x="448" y="124">applies it: version 1</text>
+
+    <!-- 3 -->
+    <text class="diagram__step" x="12" y="170">3</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="440" y1="166" x2="657" y2="166" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="550" y="159" text-anchor="middle" style="font-size:11.5px">state, version 1</text>
+    <text class="diagram__small" x="258" y="170">waits up to 20 s</text>
+
+    <!-- 4 -->
+    <text class="diagram__step" x="12" y="214">4</text>
+    <line class="diagram__wire diagram__wire--viewer" x1="660" y1="210" x2="899" y2="210" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="780" y="204" text-anchor="middle" style="font-size:11.5px">the <tspan class="diagram__mono">.sw</tspan> file?</text>
+    <line class="diagram__wire diagram__wire--viewer" x1="900" y1="234" x2="661" y2="234" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="780" y="228" text-anchor="middle" style="font-size:11.5px">its traces</text>
+    <text class="diagram__small" x="668" y="258">Spacewalk builds and frames it</text>
+
+    <!-- 5 -->
+    <text class="diagram__step" x="12" y="304">5</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="660" y1="300" x2="443" y2="300" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="550" y="293" text-anchor="middle" style="font-size:11.5px">realized, version 1, drawn</text>
+
+    <!-- 6 -->
+    <text class="diagram__step" x="12" y="344">6</text>
+    <line class="diagram__wire" x1="440" y1="340" x2="251" y2="340" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="345" y="334" text-anchor="middle" style="font-size:11.5px">realized</text>
+
+    <!-- 7 -->
+    <text class="diagram__step" x="12" y="384">7</text>
+    <line class="diagram__wire" x1="250" y1="380" x2="71" y2="380" marker-end="url(#arrow-small)"/>
+    <text class="diagram__knockout" x="160" y="374" text-anchor="middle" style="font-size:11px">Applied and drawn, and the state</text>
+  </svg>
+  </div>
+  <figcaption class="figure__caption"><b>Figure 4.</b> One change, with time running downward. Step 2 is a call from the Worker to its own Durable Object, inside Cloudflare. Every other Viewer in the Room gets the same version in step 3 and draws it too; only the first report answers the call.</figcaption>
+</figure>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th class="data-table__step"></th><th>Wire</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td class="data-table__step">1</td><td>A</td><td>The Host posts <code>tools/call</code> for <code>load_ensemble</code> with <code>url</code> and <code>room</code>. The Worker reads the Room id, in any case and with spaces trimmed, and refuses one that is malformed.</td></tr>
+    <tr><td class="data-table__step">2</td><td></td><td>The Worker proposes <code>{type: load-ensemble, url}</code> to the Room. Every command tool does exactly this; each is one row of <code>server/src/commandTools.ts</code>. The Room applies the proposal to its viewer state, gives the result version 1, and stores it before anything is drawn.</td></tr>
+    <tr><td class="data-table__step">3</td><td>B</td><td>The Room broadcasts version 1 to every Viewer in the Room. The Worker waits up to 20 s for the first Viewer to report it realized.</td></tr>
+    <tr><td class="data-table__step">4</td><td>D</td><td>The Viewer sees an ensemble it is not showing and fetches the <code>.sw</code> file from its URL, directly from the ensemble host, not through the Worker. Spacewalk builds the structure at the ensemble’s default group and trace, and frames it.</td></tr>
+    <tr><td class="data-table__step">5</td><td>B</td><td>The Viewer reports version 1 realized: drawn, and whether the ensemble is made of traces or is a point cloud. The Room keeps the report and records the kind in the viewer state, without a new version.</td></tr>
+    <tr><td class="data-table__step">6</td><td></td><td>The Room hands the outcome to the Worker. A later report of the same version, from a second Viewer, changes nothing, except that a failure is kept whichever Viewer reports it.</td></tr>
+    <tr><td class="data-table__step">7</td><td>A</td><td>The Worker replies “Applied and drawn. Version 1.”, then what changed since the model’s last reply that it did not cause, how many Viewers are connected, and the whole viewer state. The model turns it into its answer.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<aside class="note">Some changes name a direction, not a value: <code>step_ball_radius</code>, <code>step_stick_radius</code> and <code>adjust_background</code>. The Room applies each to whatever the value is when it arrives, so the model need not read first, and the change cannot race a person’s hand change.</aside>
+
+<p>The reply always carries the whole viewer state because the model cannot see the screen. Each answer tells it what is there now, and what changed that it did not cause, so its next call can build on the view rather than on its memory of it.</p>
+
+<p>Nothing more crosses B after step 5. The Room wrote version 1 itself, so a Viewer has nothing to report back but that it drew it.</p>
+
+<h2 id="hand">When a person changes the view</h2>
+
+<p>The person also works in the Viewer directly: stepping to another trace, switching the render style, changing the structure appearance or the viewer settings in the Viewer’s panels. None of this goes through the model, and the model is not told at once.</p>
+
+<p>Each hand change is a proposal too. The Viewer sends it to the Room along B and keeps nothing of it. The Room applies it as it would the model’s, gives the result a new version, keeps a note of it for the model, and broadcasts the version to every Viewer, the one that made the change included. That Viewer draws a state it already shows, which changes nothing. A slider or a color being dragged is sent once, a quarter of a second after it stops, the patches merged. And the change listeners that fire while a Viewer is drawing a version are taken for the echo they are, and not sent.</p>
+
+<p>When the Room refuses a hand change, for instance a render style for an ensemble it knows to be a point cloud, it tells only that Viewer why and sends it the current version again, which puts the change back.</p>
+
+<p>The model learns of hand changes in one of two ways: in the reply to its next call, whatever the tool, as “Changed since your last reply, not by you: stepped to trace 12; switched to ribbon”, or by asking with <code>read_viewer_state</code>, which changes nothing. Each change is told once. A Viewer’s failure to draw a version is told the same way.</p>
+
+<h2 id="together">Several Viewers, one camera, one highlight</h2>
+
+<p>Anyone given the Room link can open it, in any browser, and everyone with the Room open is a Participant. The Organizer is the one whose conversation the Room belongs to; the others are Guests, with no conversation and no model. In what the Viewers show they are equals: anyone’s change counts the same, and every Viewer draws every version.</p>
+
+<p>Two things on screen are not in the viewer state. The Room carries both between Viewers without keeping either.</p>
+
+<p><b>The camera.</b> A camera pose means something only against the geometry a Viewer has drawn, which the Room never sees, so each Viewer’s camera rig owns its pose (ADR 0005). At any moment one Viewer is the camera holder and the others follow it: the Viewer where a person last took hold of the camera, let go of it, reset it or stepped to another trace. When a person lets go, the Viewer sends its pose with the place it was read in, and the Room relays it. A Viewer showing another place drops it, and one whose own person is dragging ignores it. When the holder leaves, the longest-connected Viewer takes over.</p>
+
+<p><b>The highlight.</b> Pointing at the genomic navigator lights the matching part of the structure, and, with balls and sticks, pointing at a ball lights the navigator. The Viewer sends the highlight as the pointer moves, about once an animation frame, and the Room relays it to every other Viewer, which draws it as if its own person were pointing (ADR 0006). A person’s own highlight wins on their own screen. When a Viewer whose highlight is showing closes, the Room sends a clear in its place.</p>
+
+<figure class="figure">
+  <div class="figure__scroll">
+  <svg class="diagram" viewBox="0 0 1000 336" role="img" aria-label="Sequence for the two relays between the Organizer's Viewer and a Guest's Viewer, through the Room: took-camera, camera-released relayed as camera-moved, highlighted relayed as highlight-moved, and an empty highlight relayed as a clear.">
+    <text class="diagram__title diagram__viewer-ink" x="150" y="32" text-anchor="middle">Organizer’s Viewer</text>
+    <text class="diagram__title" x="500" y="32" text-anchor="middle">Room</text>
+    <text class="diagram__title diagram__viewer-ink" x="850" y="32" text-anchor="middle">Guest’s Viewer</text>
+    <line class="diagram__lifeline" x1="150" y1="46" x2="150" y2="326"/>
+    <line class="diagram__lifeline" x1="500" y1="46" x2="500" y2="326"/>
+    <line class="diagram__lifeline" x1="850" y1="46" x2="850" y2="326"/>
+
+    <!-- 1 -->
+    <text class="diagram__step" x="12" y="86">1</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="150" y1="82" x2="497" y2="82" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="325" y="75" text-anchor="middle"><tspan class="diagram__mono">took-camera</tspan></text>
+    <text class="diagram__small" x="508" y="86">marks it the camera holder</text>
+
+    <!-- 2 -->
+    <text class="diagram__step" x="12" y="134">2</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="150" y1="130" x2="497" y2="130" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="325" y="123" text-anchor="middle" style="font-size:11.5px"><tspan class="diagram__mono">camera-released</tspan>: place, pose</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="500" y1="156" x2="847" y2="156" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="675" y="149" text-anchor="middle"><tspan class="diagram__mono">camera-moved</tspan></text>
+    <text class="diagram__small" x="858" y="176">follows it, if it</text>
+    <text class="diagram__small" x="858" y="190">shows that place</text>
+
+    <!-- 3 -->
+    <text class="diagram__step" x="12" y="214">3</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="150" y1="210" x2="497" y2="210" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="325" y="203" text-anchor="middle" style="font-size:11.5px"><tspan class="diagram__mono">highlighted</tspan>: place, selection</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="500" y1="236" x2="847" y2="236" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="675" y="229" text-anchor="middle"><tspan class="diagram__mono">highlight-moved</tspan></text>
+    <text class="diagram__small" x="858" y="256">draws it, if it</text>
+    <text class="diagram__small" x="858" y="270">shows that place</text>
+
+    <!-- 4 -->
+    <text class="diagram__step" x="12" y="294">4</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="150" y1="290" x2="497" y2="290" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="325" y="283" text-anchor="middle" style="font-size:11.5px"><tspan class="diagram__mono">highlighted</tspan>: empty, a clear</text>
+    <line class="diagram__wire diagram__wire--socket diagram__wire--viewer" x1="500" y1="316" x2="847" y2="316" marker-end="url(#arrow-small-viewer)"/>
+    <text class="diagram__knockout diagram__viewer-ink" x="675" y="309" text-anchor="middle" style="font-size:11.5px"><tspan class="diagram__mono">highlight-moved</tspan>, empty</text>
+  </svg>
+  </div>
+  <figcaption class="figure__caption"><b>Figure 5.</b> The two relays, between the Organizer’s Viewer and a Guest’s, with time running downward. Step 3 repeats as long as the pointer moves. The Room stores neither the pose nor the highlight; it keeps only, on each socket, whether that Viewer holds the camera and whether its highlight is the one showing. Neither relay makes a version.</figcaption>
+</figure>
+
+<p>Neither is news to the model. The camera reaches it only through <code>get_shareable_url</code>, which asks the holder for a reading of that moment, and the highlight not at all.</p>
+
+<h2 id="server">Calls that are not a plain change</h2>
+
+<p>Of the 14 tools, seven are command tools and follow Figure 4. <code>load_session</code> follows it too, once it has read its session. The other six never change the viewer state.</p>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th>Tool</th><th>Wires</th><th>What the Worker does</th></tr></thead>
+  <tbody>
+    <tr><th><code>open_viewer</code></th><td>A</td><td>Opens the Room, minting an id if it is given none, and builds the Room link. Sends the Viewers nothing.</td></tr>
+    <tr><th><code>list_example_ensembles</code></th><td>A, E</td><td>Replies with the example list, group by group, each ensemble with its name and URL. Needs no Room.</td></tr>
+    <tr><th><code>read_viewer_state</code></th><td>A</td><td>Replies with the viewer state, the number of Viewers connected, and what changed that the model did not cause. Sends the Viewers nothing.</td></tr>
+    <tr><th><code>read_viewer_count</code></th><td>A</td><td>Replies with the number of Viewers connected and nothing else, leaving the news for the model’s next reply, so a Connector can poll it to show whether Spacewalk is open.</td></tr>
+    <tr><th><code>get_shareable_url</code></th><td>A, B, F</td><td>Refuses when nothing is loaded. Takes the camera pose from a load no Viewer has drawn yet, or else asks the camera holder for a reading, waiting up to 3 s. Writes a snapshot URL and shortens it; if shortening fails, replies with the long one.</td></tr>
+    <tr><th><code>reset_camera</code></th><td>A, B</td><td>Not a proposal: the Room tells every Viewer to frame the structure, and waits up to 3 s for the holder to confirm. No version is made.</td></tr>
+    <tr><th><code>load_session</code></th><td>A, F for a short URL, then B</td><td>Reads the Spacewalk block of a shareable URL or session string and proposes it whole, as one change, so a Viewer draws it once. A short URL is followed to its long one; a session is never fetched from a URL. The reply says what was left out, such as IGV tracks and the Hi-C map.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<aside class="note">A snapshot URL has no Room. It opens <code>viewer.html</code> with a session block and the viewer settings in its parameters: a frozen view that later changes in the Room do not reach. To bring someone into the Room itself, give them the Room link.</aside>
+
+<p>The example list finds ensembles; it does not load them. The model passes the URL it picked to <code>load_ensemble</code>, a command tool, and each Viewer fetches the file along D.</p>
+
+<h2 id="state">What each part keeps</h2>
+
+<p>The table says what survives between requests, and where. The Room is the record of what is shown; each Viewer is a replica of it, and owns only its camera pose.</p>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th>Part</th><th>Keeps</th><th>For how long</th></tr></thead>
+  <tbody>
+    <tr><th>The model</th><td>The Room id, in the conversation</td><td>As long as the conversation</td></tr>
+    <tr><th>The Host</th><td>Nothing about the Room. ChatGPT sends the same <code>x-openai-session</code> on every request of a conversation</td><td>As long as the conversation</td></tr>
+    <tr><th>Worker, at <code>/mcp</code></th><td>Nothing per request: each gets a fresh MCP server. Per Worker instance, the example list</td><td>Five minutes, then fetched again</td></tr>
+    <tr><th>Room</th><td>The viewer state and its version; the latest version a Viewer has realized, and the last 100 failures reported; the last 100 changes the model did not cause, until a reply tells them; a loaded session’s camera pose, until a Viewer has drawn the load. On each socket: when it joined, whether it holds the camera, and whether its highlight is showing</td><td>Deleted a day after its last use, whether or not Viewers are connected; the Room then keeps only its last version number, marked expired</td></tr>
+    <tr><th>Join card</th><td>The Room link</td><td>As long as the conversation shows it</td></tr>
+    <tr><th class="viewer-ink">Viewer</th><td>What it last drew; its camera pose; the reference ruler’s position on screen, and which panels are open. Nothing in <code>localStorage</code></td><td>Until the page closes; the view, though not the pose, is drawn again from the Room when the Room link is opened again</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>A Room is used by a tool call, or by a Viewer joining, proposing, reporting a version or moving the camera; a highlight alone does not count. An expired Room never gets its contents back. <code>open_viewer</code> with its id starts it again, empty, at the version after its last, so that no Viewer takes the new state for one it has already drawn. Only a snapshot URL taken from the Room outlasts it (ADR 0004).</p>
+
+<p>A Viewer that reloads or reconnects draws the Room’s current version and frames the structure, then takes the holder’s pose if another Viewer holds the camera. A lone Viewer that reloads therefore loses its orbit and shows the framing. Nothing has to enforce one Viewer per Room.</p>
+
+<h2 id="wrong">When something goes wrong</h2>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th>What happens</th><th>Where</th><th>What the model or the person sees</th></tr></thead>
+  <tbody>
+    <tr><td>A call’s <code>room</code> is not a Room id</td><td>A</td><td>The Worker refuses it, and says to pass the Room id from <code>open_viewer</code>’s reply.</td></tr>
+    <tr><td>A call carries no <code>room</code> and no <code>x-openai-session</code></td><td>A</td><td>An error that says to pass <code>room</code>. Only <code>open_viewer</code> mints an id instead.</td></tr>
+    <tr><td>Only <code>x-openai-session</code> arrives, and the secret is not set</td><td>A</td><td>The request fails as a server misconfiguration. There is no fallback key.</td></tr>
+    <tr><td>The Room was never opened</td><td>A, B</td><td>The tool says to call <code>open_viewer</code>. A Viewer opened on that link shows “There is no such Room.” and does not retry.</td></tr>
+    <tr><td>The Room has expired</td><td>A, B</td><td>The tool says what the Room showed is gone, and to call <code>open_viewer</code> with that <code>room</code> to start it again, empty. A Viewer shows “This Room has expired.” and does not retry.</td></tr>
+    <tr><td>A proposal does not apply, such as choosing an ensemble group with nothing loaded</td><td>A</td><td>An error with the reason, followed by the viewer state and the news. Nothing changes.</td></tr>
+    <tr><td>No Viewer is open</td><td>B</td><td>Not an error: “Applied, not shown yet — no viewer is open.” The next Viewer to join draws it.</td></tr>
+    <tr><td>No Viewer reports within 20 s</td><td>B</td><td>“Applied, still drawing. How it came out will be in a later reply.” A later reply says how far the Viewers have realized.</td></tr>
+    <tr><td>A Viewer cannot draw a version, such as a <code>.sw</code> file it cannot fetch</td><td>B, D</td><td>“Applied, but the Viewer failed to draw it”, with the reason. The version stands in the Room, and that Viewer does not try the same place again until the Room names another.</td></tr>
+    <tr><td>The example list cannot be read</td><td>E</td><td>An error that says to try later, or to ask the person for the URL of a <code>.sw</code> file.</td></tr>
+    <tr><td>The shortener fails</td><td>F</td><td>The long snapshot URL, which works as well.</td></tr>
+    <tr><td>A short URL given to <code>load_session</code> cannot be followed</td><td>F</td><td>An error that says to ask the person for the long URL.</td></tr>
+    <tr><td>The camera holder does not answer within 3 s</td><td>B</td><td><code>get_shareable_url</code> gives a snapshot that opens framed, and says why. <code>reset_camera</code> says no Viewer confirmed it.</td></tr>
+    <tr><td>The Viewer speaks another protocol version</td><td>B</td><td>“This viewer is out of date: reload the viewer.” The Room closes the socket.</td></tr>
+    <tr><td>The Viewer’s socket drops</td><td>B</td><td>Nothing is shown. The Viewer rejoins after 1 s, 2 s, up to 5 s, and draws the current version. A hand change made meanwhile is not sent, and the resync puts it back.</td></tr>
+    <tr><td>The Viewer is served from an origin not on <code>VIEWER_ORIGINS</code></td><td>B</td><td>The socket is refused with 403, and the Viewer keeps retrying.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="addresses">Addresses</h2>
+
+<p>These are the development deployment, the only one running. Both parts run on one Cloudflare account, the one that owns the <code>3dg.io</code> zone. They are deployed as a matched pair: the Worker names the Viewer page in <code>VIEWER_URL</code> and admits it in <code>VIEWER_ORIGINS</code>, and the Viewer page is built with the Worker’s address in <code>VITE_SERVER_URL</code>, fixed at build time. Production, <code>spacewalk-mcp.3dg.io</code> with <code>spacewalk-viewer.pages.dev</code>, is configured the same way and not yet deployed.</p>
+
+<div class="table-wrap table-wrap--wide">
+<table>
+  <thead><tr><th>Part</th><th>Address</th><th>Endpoints</th></tr></thead>
+  <tbody>
+    <tr><th>Worker</th><td><code>https://spacewalk-mcp-dev.3dg.io</code></td><td><code>/mcp</code> for Hosts, <code>/ws</code> for Viewers</td></tr>
+    <tr><th class="viewer-ink">Viewer page</th><td><code>https://spacewalk-viewer-dev.pages.dev/viewer.html</code></td><td>static files, built from the <code>spacewalk</code> repo; the full app at <code>/</code> ignores <code>?room=</code></td></tr>
+    <tr><th>Example list</th><td><code>pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev</code></td><td><code>/load-from-list.json</code>, beside the <code>.sw</code> files it lists</td></tr>
+    <tr><th>Link shortener</th><td><code>https://spacewalk.aidenlab.org/shorten</code></td><td>the full app’s; the short URLs it has given out are on <code>t.3dg.io</code> and <code>tinyurl.com</code></td></tr>
+    <tr><th>Snapshot URL</th><td><code>viewer.html?spacewalkSessionURL=…&amp;viewerSettings=…</code></td><td>a frozen view; no Room</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Locally the Worker runs on <code>localhost:8787</code> and the Viewer page on <code>localhost:5173</code>, from the <code>spacewalk</code> repo’s Vite dev server. The Viewer connects to the Worker directly, since <code>VITE_SERVER_URL</code> defaults to <code>localhost:8787</code>, and the local <code>VIEWER_ORIGINS</code> admits <code>localhost:5173</code>. The local <code>VIEWER_URL</code> in <code>wrangler.toml</code> names the root, where the full app ignores <code>?room=</code>, so a working local Room link needs <code>VIEWER_URL</code> pointed at <code>/viewer.html</code> with <code>wrangler dev --var</code>.</p>
+
+<p>The words used here (Viewer, Room, Room link, Participant, Organizer, Guest, viewer state, structure appearance, camera pose, framing, camera holder, highlight, session, session block, snapshot URL, proposal, relative step, realized) are defined in <a href="../GLOSSARY.md"><code>GLOSSARY.md</code></a>. A Host is the Claude or ChatGPT app, and the Side panel is Claude desktop’s built-in browser pane. The decision to make the Room the record of the view is ADR 0001; to keep viewer settings beside the session, ADR 0002; to keep spacewalk-remote and the protocol in this repo, ADR 0003; to keep both the Room and the session, ADR 0004; to give the camera to the Viewer’s rig, ADR 0005; and to relay the highlight without keeping it, ADR 0006. How the repos and packages fit together is in <a href="how-the-pieces-fit.html">How spacewalk-mcp fits together</a>.</p>
+
+<p class="page__end">Written 4 November 2026 from the code at commit 7a811be, with <code>spacewalk</code> at 3cb16ae.</p>
+
+</main>
+</body>
+</html>
