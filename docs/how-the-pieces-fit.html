@@ -112,7 +112,7 @@ th { font-weight: 650; }
 
 <header style="display:grid;gap:12px">
   <h1>How spacewalk-mcp fits together</h1>
-  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026. The parts about npm were updated on November 2, 2026, when the remote reached npm. The section on what the remote is was added on November 3, 2026.</p>
+  <p class="lede" style="margin:0">A map of the projects, the packages and who uses what. Accurate as of October 30, 2026. The parts about npm were last updated on November 4, 2026. The section on what the remote is was added on November 3, 2026.</p>
 </header>
 
 <div class="answers">
@@ -386,8 +386,8 @@ th { font-weight: 650; }
   <table>
     <thead><tr><th>Where</th><th>What it uses</th></tr></thead>
     <tbody>
-      <tr><td><code>spacewalk</code> branch <code>main</code></td><td>The 0.2.0 tarball, until <a href="https://github.com/aidenlab/spacewalk/pull/149">spacewalk#149</a> merges and pins 0.3.0 from npm</td></tr>
-      <tr><td>npm</td><td>0.3.0, the <code>latest</code> version</td></tr>
+      <tr><td><code>spacewalk</code> branch <code>main</code></td><td>0.3.0 from npm, pinned since <a href="https://github.com/aidenlab/spacewalk/pull/149">spacewalk#149</a> merged on November 2, 2026</td></tr>
+      <tr><td>npm</td><td>0.3.0 on the <code>latest</code> dist-tag. 0.3.1-rc.0 is on <code>next</code>: a pre-release with no code changes, published only to check that trusted publishing works. A plain <code>npm install</code> doesn't pick it up.</td></tr>
     </tbody>
   </table>
   </div>
