@@ -46,16 +46,31 @@ ensure_secret() {
   fi
 }
 
-# Matches the whole name: spacewalk-viewer must not be taken for spacewalk-viewer-dev.
-ensure_pages_project() {
+# Run by an agent (Claude Code, Cursor and the like), wrangler 4.155 turns a Pages command on a
+# project that does not exist yet into a Worker deploy: `pages project create` uploaded server/ as a
+# Worker named after the page. --force keeps these Pages commands. A person running them is unaffected.
+PAGES_ONLY=--force
+
+# Matches the whole name: spacewalk-viewer must not be taken for spacewalk-viewer-dev. A project that
+# still is not listed after the create stops here, so nothing is deployed in its place.
+_pages_project_listed() {
   local out
   out=$(wrangler pages project list --json 2>/dev/null) \
-    || { echo "could not list the Pages projects; nothing was changed" >&2; return 1; }
-  if [[ "$out" == *"\"$PAGES_PROJECT\""* ]]; then
+    || { echo "could not list the Pages projects; nothing was changed" >&2; return 2; }
+  [[ "$out" == *"\"$PAGES_PROJECT\""* ]]
+}
+
+ensure_pages_project() {
+  local listed=0
+  _pages_project_listed || listed=$?
+  if (( listed == 0 )); then
     echo "the Pages project $PAGES_PROJECT exists"
-  else
-    wrangler pages project create "$PAGES_PROJECT" --production-branch main
+    return 0
   fi
+  (( listed == 1 )) || return 1
+  wrangler pages project create "$PAGES_PROJECT" --production-branch main "$PAGES_ONLY"
+  _pages_project_listed \
+    || { echo "wrangler did not create the Pages project $PAGES_PROJECT; check that it made no Worker in its place" >&2; return 1; }
 }
 
 # build_and_upload_viewer SPACEWALK_DIR
@@ -71,7 +86,7 @@ build_and_upload_viewer() {
   (cd "$page_dir" && VITE_SERVER_URL="$BASE_URL" npm run build)
   grep -q "${BASE_URL#https://}" "$page_dir"/dist/assets/*.js \
     || { echo "the built assets do not contain $BASE_URL; nothing was uploaded" >&2; return 1; }
-  wrangler pages deploy "$page_dir/dist" --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true
+  wrangler pages deploy "$page_dir/dist" --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true "$PAGES_ONLY"
 }
 
 # ── Checks on what was deployed. A failure is reported and counted, and does not stop the others. ──
