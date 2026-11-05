@@ -93,6 +93,7 @@ The script does these steps in order, stopping if one fails:
 6. Creates the Pages project, only if it is missing.
 7. Builds the Viewer page against the production Worker and uploads it.
 8. Checks that the Viewer page answers.
+9. Checks the release as a whole: the Worker reports `<tag> (<short sha>)`, lists the Spacewalk tools, and `open_viewer` gives a Room link on `https://spacewalk-viewer.pages.dev/viewer.html` that loads. This opens a Room, which expires unused after a day.
 
 It ends with `released <tag>`, the page address and the Worker address.
 
@@ -112,7 +113,7 @@ The first release also creates the Worker, its `spacewalk-mcp.3dg.io` domain, th
 
 ## 4. Check production
 
-The script's checks show that the Worker and the page answer. They do not show that the two work together, so open a Room.
+The script's checks show that the Worker reports the release and hands out Room links that load. They do not show that a Viewer joins the Room and draws what the tools load, so open a Room in a browser.
 
 `scripts/dev-check.mjs` calls the dev Worker unless `MCP_URL` says otherwise, so name production every time:
 
