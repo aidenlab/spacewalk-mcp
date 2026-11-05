@@ -7,6 +7,7 @@
  *   GET     /mcp          - 405 (no SSE stream)
  *   OPTIONS /mcp          - CORS preflight
  *   GET     /version      - what this Deployment runs: the Worker's version and the Viewer page's
+ *                           (JSON; a page instead when the request asks for HTML, as a browser does)
  *   GET     /*            - 404 (the Viewer is hosted on its own origin, not by this Worker)
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -29,7 +30,7 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === '/ws') return connectViewer(request, env, url)
     if (url.pathname === '/mcp') return serveMcp(request, env)
-    if (url.pathname === '/version' && request.method === 'GET') return serveVersion(env)
+    if (url.pathname === '/version' && request.method === 'GET') return serveVersion(request, env)
     return new Response('Not found', { status: 404 })
   },
 } satisfies ExportedHandler<Env>
