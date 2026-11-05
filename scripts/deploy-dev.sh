@@ -10,8 +10,8 @@
 #
 # Runs the tests first and checks the result last. The Viewer page is built from the spacewalk
 # checkout next to this one (SPACEWALK_DIR names another), as it stands, uncommitted changes
-# included. https://spacewalk-mcp-dev.3dg.io/version says what is live, Worker and page. To check the Hosts as well, see
-# docs/checking-a-host.md.
+# included. https://spacewalk-mcp-dev.3dg.io/version says what is live, Worker and page. To check
+# the Hosts as well, see docs/checking-a-host.md.
 set -euo pipefail
 
 TARGET="${1:-all}"

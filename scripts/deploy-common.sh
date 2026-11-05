@@ -167,41 +167,34 @@ _server_version() {
     r.serverInfo.version
 }
 
-# Polls for up to a minute: the Worker just deployed may take a moment to replace the one before.
-_wait_for_version() {
-  local got="" i
-  for i in 1 2 3 4 5 6; do
-    got=$(_server_version)
-    [[ "$got" == "$1" ]] && break
-    sleep 10
-  done
-  printf '%s' "$got"
-}
-
-# _deployed JS_EXPRESSION
-# JS_EXPRESSION of what GET $BASE_URL/version answers (`r`); empty when there is no answer or the
-# expression throws. The same quoting rules as _mcp.
-_deployed() {
-  curl -s --max-time 15 "$BASE_URL/version" \
-    | node -e "let s='';process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{try{const r=JSON.parse(s);process.stdout.write(String($1))}catch{}})" \
-    || true
-}
-
-# _wait_for_deployed WANTED JS_EXPRESSION
-# Polls /version VERSION_POLLS times (default 6), ten seconds apart, until JS_EXPRESSION is WANTED:
-# a new Worker takes a moment to replace the old, and Pages to serve a new version.json.
-_wait_for_deployed() {
-  local got="" i
+# _poll WANTED COMMAND [ARGS...]
+# Runs COMMAND VERSION_POLLS times (default 6), ten seconds apart, until it prints WANTED; prints
+# what it last printed. A new Worker takes a moment to replace the old, and Pages to serve a new page.
+_poll() {
+  local wanted="$1" got="" i
+  shift
   for ((i = 1; i <= ${VERSION_POLLS:-6}; i++)); do
-    got=$(_deployed "$2")
-    [[ "$got" == "$1" ]] && break
+    got=$("$@")
+    [[ "$got" == "$wanted" ]] && break
     (( i < ${VERSION_POLLS:-6} )) && sleep 10
   done
   printf '%s' "$got"
 }
 
+_wait_for_version() { _poll "$1" _server_version; }
+
+# _version_field JS_EXPRESSION
+# JS_EXPRESSION of what GET $BASE_URL/version answers (`r`); empty when there is no answer or the
+# expression throws. The same quoting rules as _mcp.
+_version_field() {
+  curl -s --max-time 15 "$BASE_URL/version" \
+    | node -e "let s='';process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{try{const r=JSON.parse(s);process.stdout.write(String($1))}catch{}})" \
+    || true
+}
+
+
 check_worker_version() {
-  _check "/version reports the Worker just deployed" "$VERSION" "$(_wait_for_deployed "$VERSION" r.worker)"
+  _check "/version reports the Worker just deployed" "$VERSION" "$(_poll "$VERSION" _version_field r.worker)"
 }
 
 check_worker() {
@@ -227,7 +220,7 @@ check_viewer() {
   echo "checking the Viewer page at $(viewer_url)"
   _check "the Viewer page answers 200" 200 "$(_http_code "$(viewer_url)")"
   _check "/version reports the page just uploaded" "$VIEWER_VERSION" \
-    "$(_wait_for_deployed "$VIEWER_VERSION" "r.viewer.version ?? r.viewer.error")"
+    "$(_poll "$VIEWER_VERSION" _version_field "r.viewer.version ?? r.viewer.error")"
 }
 
 # What a release has to show once both halves are up: the Worker at $BASE_URL reports $VERSION,
