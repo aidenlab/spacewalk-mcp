@@ -113,7 +113,8 @@ _hmac_room() {
 
 # _mcp METHOD PARAMS_JSON JS_EXPRESSION
 # Posts one JSON-RPC request to $BASE_URL/mcp and prints JS_EXPRESSION of its result (`r`); empty
-# when there is no answer or the expression throws.
+# when there is no answer or the expression throws. The expression is pasted into a double-quoted
+# node -e, so it must not contain ", $ or a backtick.
 _mcp() {
   curl -s --max-time 15 -X POST "$BASE_URL/mcp" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
@@ -154,14 +155,16 @@ check_worker() {
   _check "/ws accepts https://$PAGES_PROJECT.pages.dev" 101 "$(_ws_code "https://$PAGES_PROJECT.pages.dev")"
 }
 
-# Follows redirects: Pages may send viewer.html on to /viewer.
+# The status a GET of URL ends at. Follows redirects: Pages may send viewer.html on to /viewer.
+_http_code() { curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$1" || true; }
+
 check_viewer() {
   echo "checking the Viewer page at $(viewer_url)"
-  _check "the Viewer page answers 200" 200 "$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$(viewer_url)" || true)"
+  _check "the Viewer page answers 200" 200 "$(_http_code "$(viewer_url)")"
 }
 
 # What a release has to show once both halves are up: the Worker at $BASE_URL reports $VERSION,
-# lists the Spacewalk tools, and its Join link is on the Viewer page and loads. open_viewer opens a
+# lists the Spacewalk tools, and its Room link is on the Viewer page and loads. open_viewer opens a
 # Room, which expires unused after a day.
 check_release() {
   local tools room_link page
@@ -172,8 +175,8 @@ check_release() {
   _check "tools/list lists open_viewer and read_viewer_state" yes \
     "$([[ " $tools " == *" open_viewer "* && " $tools " == *" read_viewer_state "* ]] && echo yes || echo "${tools:-no tools}")"
   room_link="$(_mcp tools/call '{"name":"open_viewer","arguments":{}}' r.structuredContent.roomLink)"
-  _check "the Join link is on $page" yes "$([[ "$room_link" == "$page?room="* ]] && echo yes || echo "${room_link:-no link}")"
-  _check "the Join link loads" 200 "$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$room_link" || true)"
+  _check "the Room link is on $page" yes "$([[ "$room_link" == "$page?room="* ]] && echo yes || echo "${room_link:-no link}")"
+  _check "the Room link loads" 200 "$([[ -n "$room_link" ]] && _http_code "$room_link" || echo "no link")"
 }
 
 # Run last: the deployment is in place by now, so this reports rather than undoes anything.

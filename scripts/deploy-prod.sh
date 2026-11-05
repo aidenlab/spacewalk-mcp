@@ -11,7 +11,7 @@
 # Worker and the page are deployed from there using the tag's own deploy scripts. So uncommitted
 # changes never ship, and rolling back is deploying an earlier tag. --spacewalk (else SPACEWALK_DIR,
 # else the checkout next to this one) only says where that clone is. The last check is that the live
-# Deployment reports the tag, lists the Spacewalk tools, and its Join link loads on the Viewer page.
+# Deployment reports the tag, lists the Spacewalk tools, and its Room link loads on the Viewer page.
 #
 # The first release creates the Worker, the Pages project and SESSION_HMAC_SECRET. Later releases
 # leave the secret as it is. A prod- tag does not publish @aidenlab/spacewalk-remote: that is a v tag

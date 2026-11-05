@@ -1,5 +1,5 @@
 // check_release (scripts/deploy-common.sh), the last thing deploy-prod.sh does: the live Deployment
-// reports the release, lists the Spacewalk tools, and its Join link loads on the Viewer page. It is
+// reports the release, lists the Spacewalk tools, and its Room link loads on the Viewer page. It is
 // run in bash against a fake Deployment on localhost, whose Worker and Viewer page are one server.
 import { execFile } from 'node:child_process'
 import { createServer } from 'node:http'
@@ -60,7 +60,7 @@ function checkRelease() {
 }
 
 describe('check_release', () => {
-  it('passes when the Deployment reports the release, lists the tools and its Join link loads', async () => {
+  it('passes when the Deployment reports the release, lists the tools and its Room link loads', async () => {
     const run = await checkRelease()
     expect(run.stderr).toBe('')
     expect(run.status).toBe(0)
@@ -81,14 +81,14 @@ describe('check_release', () => {
     expect(run.stderr).toContain('open_viewer')
   })
 
-  it('fails when the Join link is not on the Viewer page', async () => {
+  it('fails when the Room link is not on the Viewer page', async () => {
     deployment.viewerPage = 'https://spacewalk-viewer-dev.pages.dev/viewer.html'
     const run = await checkRelease()
     expect(run.status).not.toBe(0)
     expect(run.stderr).toContain('spacewalk-viewer-dev.pages.dev')
   })
 
-  it('fails when the Join link does not load', async () => {
+  it('fails when the Room link does not load', async () => {
     deployment.pageStatus = 404
     const run = await checkRelease()
     expect(run.status).not.toBe(0)
