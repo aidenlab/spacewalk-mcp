@@ -64,12 +64,13 @@ If that shows changes to `remote/`, release a new version, update the version `s
 ### Moving the pin
 
 ```sh
+git fetch origin
 git switch -c pin-spacewalk origin/main
 scripts/pin-viewer.sh                # spacewalk's origin/main; or name a ref: scripts/pin-viewer.sh <ref>
 git commit -m "Pin spacewalk to $(cut -c1-7 viewer.pin)" viewer.pin
 ```
 
-`pin-viewer.sh` fetches `spacewalk`, writes the full sha of the commit to `viewer.pin`, and refuses a commit that no branch of origin holds. Push the branch, merge it by pull request, redeploy dev from that `spacewalk` commit and check it as above.
+`pin-viewer.sh` fetches `spacewalk`, writes the full sha of the commit to `viewer.pin`, and refuses a commit that no branch of origin holds. Check the `@aidenlab/spacewalk-remote` that commit pins, as above. Push the branch and merge it by pull request. Then check out that commit in `../spacewalk` (`git -C ../spacewalk checkout --detach "$(cat viewer.pin)"`), redeploy dev and check it. Leave `../spacewalk` there until the release is deployed, so the check above still holds.
 
 ## 2. Tag `main` in this repo
 

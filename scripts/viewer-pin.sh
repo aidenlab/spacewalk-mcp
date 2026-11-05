@@ -33,7 +33,7 @@ checkout_viewer() {
   sha="$(head -n 1 "$mcp/viewer.pin")"
   [[ "$sha" =~ ^[0-9a-f]{40}$ ]] \
     || { echo "viewer.pin at $tag holds '$sha', not the 40-character sha of a spacewalk commit; write it with scripts/pin-viewer.sh" >&2; return 1; }
-  git -C "$spacewalk" fetch -q origin
+  git -C "$spacewalk" fetch -q --prune origin
   _on_origin "$spacewalk" "$sha" \
     || { echo "spacewalk commit $sha is not on origin of $spacewalk (viewer.pin at $tag); nothing was deployed. Push it, or pin a commit origin has with scripts/pin-viewer.sh and make a new tag" >&2; return 1; }
   _note_if_behind "$spacewalk" "$sha"
@@ -54,7 +54,7 @@ _note_if_behind() {
 # PIN_FILE. Refuses, writing nothing, a commit that no branch of origin holds.
 pin_viewer() {
   local spacewalk="$1" pin_file="$2" ref="${3:-origin/main}" sha
-  git -C "$spacewalk" fetch -q origin
+  git -C "$spacewalk" fetch -q --prune origin
   sha="$(git -C "$spacewalk" rev-parse --verify -q "$ref^{commit}")" \
     || { echo "$ref is not a commit in $spacewalk; viewer.pin was not changed" >&2; return 1; }
   _on_origin "$spacewalk" "$sha" \

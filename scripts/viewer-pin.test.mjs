@@ -101,6 +101,16 @@ describe('checkout_viewer', () => {
     expect(existsSync(dest)).toBe(false)
   })
 
+  it('stops when the pinned commit was only on a branch origin has since deleted', async () => {
+    git(spacewalk, 'push', '-q', 'origin', 'HEAD:refs/heads/gone')
+    git(spacewalk, 'fetch', '-q', 'origin')
+    git(origin, 'branch', '-q', '-D', 'gone') // deleted elsewhere: this clone still has origin/gone
+    pin(`${commits.local}\n`)
+    const run = await checkoutViewer()
+    expect(run.status).not.toBe(0)
+    expect(run.stderr).toContain(`${commits.local} is not on origin`)
+  })
+
   it('stops when viewer.pin does not hold a full sha', async () => {
     pin(`${commits.first.slice(0, 7)}\n`)
     const run = await checkoutViewer()

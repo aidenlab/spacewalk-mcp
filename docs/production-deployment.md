@@ -1,6 +1,6 @@
 # Production deployment
 
-The two procedures a production release needs: moving the pinned `spacewalk` when the Viewer page should change, and tagging and deploying a release. `docs/production-release.md` is the full reference, with every check, the rollback and what to do when something goes wrong. Worker, Viewer page and Room are defined in `GLOSSARY.md`.
+The two procedures a production release needs: moving the pinned `spacewalk` when the Viewer page should change, and tagging and deploying a release. `docs/production-release.md` is the full reference, with every check, the rollback and what to do when something goes wrong. Viewer and Room are defined in `GLOSSARY.md`.
 
 Run every command from the root of this repo, with the `spacewalk` checkout next to it. If it is elsewhere, pass `--spacewalk <path>` to both scripts.
 
@@ -23,26 +23,30 @@ Do this when the release should ship a newer Viewer page, before you tag. Skip i
 
 1. **Get the `spacewalk` commit you want onto its origin.** Merge the change to `spacewalk` `main` by pull request. A commit that only exists on your machine can't be pinned.
 
-2. **Check `spacewalk`'s pin of `@aidenlab/spacewalk-remote`.** The Worker refuses a Viewer whose protocol version differs from its own. If `remote/` here has changed since the version `spacewalk` pins, release a new version first (see `docs/releasing-spacewalk-remote.md`) and pin it in `spacewalk`:
-
-   ```sh
-   git -C ../spacewalk fetch origin
-   git -C ../spacewalk show origin/main:package.json | grep spacewalk-remote
-   ```
-
-3. **Move the pin on a branch.** With no argument, `pin-viewer.sh` pins `spacewalk`'s `origin/main`. Give it a ref to pin something else, such as an older commit:
+2. **Move the pin on a branch.** With no argument, `pin-viewer.sh` pins `spacewalk`'s `origin/main`. Give it a ref to pin something else, such as an older commit:
 
    ```sh
    git fetch origin
    git switch -c pin-spacewalk origin/main
    scripts/pin-viewer.sh            # or: scripts/pin-viewer.sh <ref>
-   git commit -m "Pin spacewalk to $(cut -c1-7 viewer.pin)" viewer.pin
-   git push -u origin pin-spacewalk
    ```
 
    The script fetches `spacewalk`, resolves the ref to a full sha, and writes `viewer.pin`. If no branch of origin holds the commit, it refuses and leaves `viewer.pin` as it was.
 
-4. **Merge the pull request.**
+3. **Check the `@aidenlab/spacewalk-remote` that commit pins.** The Worker refuses a Viewer whose protocol version differs from its own. See which version the pinned commit's `package.json` names:
+
+   ```sh
+   git -C ../spacewalk show "$(cat viewer.pin):package.json" | grep spacewalk-remote
+   ```
+
+   If `remote/` here has changed since that version's tag (`git diff --stat v<version> origin/main -- remote`), release a new version first (see `docs/releasing-spacewalk-remote.md`), pin it in `spacewalk`, and go back to step 1.
+
+4. **Commit the pin and merge it by pull request:**
+
+   ```sh
+   git commit -m "Pin spacewalk to $(cut -c1-7 viewer.pin)" viewer.pin
+   git push -u origin pin-spacewalk
+   ```
 
 5. **Test that `spacewalk` on dev.** Check out the pinned commit in `../spacewalk` and deploy dev, which builds from the working trees as they stand:
 
@@ -52,7 +56,7 @@ Do this when the release should ship a newer Viewer page, before you tag. Skip i
    scripts/deploy-dev.sh
    ```
 
-   Check dev as `docs/production-release.md` step 1 says, then return `../spacewalk` to its branch (`git -C ../spacewalk switch main`).
+   Check dev as `docs/production-release.md` step 4 describes, with `MCP_URL` unset so `dev-check` calls the dev Worker. Leave `../spacewalk` at the pinned commit until the release is deployed: the first check below compares it with `viewer.pin`. Afterwards, return it to its branch with `git -C ../spacewalk switch main`.
 
 ## Tagging and deploying a release
 
