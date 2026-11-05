@@ -6,12 +6,15 @@
 #
 #   scripts/deploy-prod.sh prod-YYYY-MM-DD[.N] [--spacewalk <path>]
 #
-# Releasing: tag spacewalk-mcp main and spacewalk main with the same name, push both tags, run this.
-# Both repos are checked out at the tag into throwaway worktrees, the tests run there, and the
-# Worker and the page are deployed from there using the tag's own deploy scripts. So uncommitted
-# changes never ship, and rolling back is deploying an earlier tag. --spacewalk (else SPACEWALK_DIR,
-# else the checkout next to this one) only says where that clone is. The last check is that the live
-# Deployment reports the tag, lists the Spacewalk tools, and its Room link loads on the Viewer page.
+# Releasing: tag spacewalk-mcp main, push the tag, run this. The tag lives in this repo only: the
+# spacewalk commit the Viewer page is built from is the one viewer.pin names at the tag
+# (scripts/viewer-pin.sh; scripts/pin-viewer.sh moves the pin). This repo is checked out at the tag
+# and spacewalk at the pin, into throwaway worktrees; the tests run there, and the Worker and the
+# page are deployed from there using the tag's own deploy scripts. So uncommitted changes never
+# ship, and rolling back is deploying an earlier tag. A tag from before viewer.pin builds the page
+# from spacewalk's tag of the same name. --spacewalk (else SPACEWALK_DIR, else the checkout next to
+# this one) only says where that clone is. The last check is that the live Deployment reports the
+# tag, lists the Spacewalk tools, and its Room link loads on the Viewer page.
 #
 # The first release creates the Worker, the Pages project and SESSION_HMAC_SECRET. Later releases
 # leave the secret as it is. A prod- tag does not publish @aidenlab/spacewalk-remote: that is a v tag
@@ -44,14 +47,19 @@ cleanup() {
 trap cleanup EXIT
 
 # A local tag that differs from origin's fails this fetch, so what is deployed is what origin has.
-for repo in "$REPO_ROOT" "$SPACEWALK_DIR"; do
-  git -C "$repo" ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null \
-    || { echo "tag $TAG is not on origin of $repo; push it first" >&2; exit 1; }
-  git -C "$repo" fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
-done
-
+git -C "$REPO_ROOT" ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null \
+  || { echo "tag $TAG is not on origin of $REPO_ROOT; push it first" >&2; exit 1; }
+git -C "$REPO_ROOT" fetch -q origin "refs/tags/$TAG:refs/tags/$TAG"
 git -C "$REPO_ROOT" worktree add -q --detach "$WORK/mcp" "$TAG"
-git -C "$SPACEWALK_DIR" worktree add -q --detach "$WORK/spacewalk" "$TAG"
+
+# spacewalk at the tag's viewer.pin, using the tag's own viewer-pin.sh as the deploy scripts below
+# are the tag's own. A tag from before the pin has neither, so this checkout's falls back to
+# spacewalk's tag of the same name.
+VIEWER_PIN_LIB="$WORK/mcp/scripts/viewer-pin.sh"
+[[ -e "$VIEWER_PIN_LIB" ]] || VIEWER_PIN_LIB="$REPO_ROOT/scripts/viewer-pin.sh"
+# shellcheck source=scripts/viewer-pin.sh
+source "$VIEWER_PIN_LIB"
+checkout_viewer "$SPACEWALK_DIR" "$WORK/mcp" "$TAG" "$WORK/spacewalk"
 echo "spacewalk-mcp $(git -C "$WORK/mcp" rev-parse --short HEAD), spacewalk $(git -C "$WORK/spacewalk" rev-parse --short HEAD) at $TAG"
 
 SERVER_DIR="$WORK/mcp/server"
