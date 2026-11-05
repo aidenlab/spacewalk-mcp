@@ -89,10 +89,10 @@ The script does these steps in order, stopping if one fails:
 2. Runs the tests. If they fail, nothing has been deployed.
 3. Deploys the Worker.
 4. Sets `SESSION_HMAC_SECRET`, only if it is missing.
-5. Checks the Worker: `/mcp` answers and reports `<tag> (<short sha>)` as its version, the secret works, and `/ws` accepts the production page and refuses other origins.
+5. Checks the Worker: `/mcp` answers and reports `<tag> (<short sha>)` as its version, as does `/version`, the secret works, and `/ws` accepts the production page and refuses other origins.
 6. Creates the Pages project, only if it is missing.
-7. Builds the Viewer page against the production Worker and uploads it.
-8. Checks that the Viewer page answers.
+7. Builds the Viewer page against the production Worker, writes its `version.json` (`<tag> (<short sha>)` of spacewalk, the pinned `@aidenlab/spacewalk-remote` and its protocol version), and uploads it.
+8. Checks that the Viewer page answers and that `/version` reports the page just uploaded.
 9. Checks the release as a whole: the Worker reports `<tag> (<short sha>)`, lists the Spacewalk tools, and `open_viewer` gives a Room link on `https://spacewalk-viewer.pages.dev/viewer.html` that loads. This opens a Room, which expires unused after a day.
 
 It ends with `released <tag>`, the page address and the Worker address.
@@ -112,6 +112,8 @@ The first release also creates the Worker, its `spacewalk-mcp.3dg.io` domain, th
 - ChatGPT's requests fail until the secret is set, moments after the Worker goes live.
 
 ## 4. Check production
+
+`https://spacewalk-mcp.3dg.io/version`, in a browser, shows what is live: the Worker's version, its protocol version, and the Viewer page's `version.json` with the spacewalk-remote and protocol version the page was built with. If the Worker cannot read the page's file, `viewer.error` says why.
 
 The script's checks show that the Worker reports the release and hands out Room links that load. They do not show that a Viewer joins the Room and draws what the tools load, so open a Room in a browser.
 

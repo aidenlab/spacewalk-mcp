@@ -6,12 +6,14 @@
  *   POST    /mcp          - MCP (stateless Streamable HTTP, JSON responses)
  *   GET     /mcp          - 405 (no SSE stream)
  *   OPTIONS /mcp          - CORS preflight
+ *   GET     /version      - what this Deployment runs: the Worker's version and the Viewer page's
  *   GET     /*            - 404 (the Viewer is hosted on its own origin, not by this Worker)
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { deriveRoomId } from './roomId.ts'
 import { registerTools } from './tools.ts'
+import { serveVersion } from './version.ts'
 
 export { Room } from './room.ts'
 
@@ -27,6 +29,7 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === '/ws') return connectViewer(request, env, url)
     if (url.pathname === '/mcp') return serveMcp(request, env)
+    if (url.pathname === '/version' && request.method === 'GET') return serveVersion(env)
     return new Response('Not found', { status: 404 })
   },
 } satisfies ExportedHandler<Env>

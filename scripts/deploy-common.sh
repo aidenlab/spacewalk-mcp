@@ -6,6 +6,7 @@
 #   BASE_URL       the Worker's address
 #   PAGES_PROJECT  the Pages project the Viewer page is uploaded to
 #   VERSION        what the Worker reports as its MCP serverInfo.version (see build_version)
+# build_and_upload_viewer sets VIEWER_VERSION, what the page it uploads reports (see write_viewer_version).
 # VIEWER_URL in [env.*] must be the address viewer_url gives here.
 
 # Pages commands do not read wrangler.toml, so they are given its account here.
@@ -73,9 +74,30 @@ ensure_pages_project() {
     || { echo "wrangler did not create the Pages project $PAGES_PROJECT; check that it made no Worker in its place" >&2; return 1; }
 }
 
-# build_and_upload_viewer SPACEWALK_DIR
+# write_viewer_version PAGE_DIR [NAME]
+# Writes PAGE_DIR/dist/version.json, what the built page reports and the Worker's GET /version passes
+# on, and sets VIEWER_VERSION. Its version is build_version's for the page's checkout (NAME as there);
+# beside it, the @aidenlab/spacewalk-remote the page installed and the PROTOCOL_VERSION that package
+# exports, since a Room refuses a Viewer that speaks another protocol. The package ships TypeScript,
+# which node will not load from node_modules, so the constant is read from its source.
+write_viewer_version() {
+  local page_dir="$1" remote="$1/node_modules/@aidenlab/spacewalk-remote" remote_version protocol
+  remote_version=$(node -p "require(process.argv[1]).version" "$remote/package.json" 2>/dev/null) \
+    || { echo "no @aidenlab/spacewalk-remote installed in $page_dir; no version.json was written" >&2; return 1; }
+  protocol=$(sed -n 's/^export const PROTOCOL_VERSION = \([0-9][0-9]*\).*/\1/p' "$remote/src/protocol.ts" 2>/dev/null)
+  [[ -n "$protocol" ]] \
+    || { echo "no PROTOCOL_VERSION in $remote/src/protocol.ts; no version.json was written" >&2; return 1; }
+  VIEWER_VERSION="$(build_version "$page_dir" "${2:-}")"
+  node -e 'const [file, version, remote, protocol] = process.argv.slice(1)
+    require("fs").writeFileSync(file, JSON.stringify({ version, "spacewalk-remote": remote, protocol: Number(protocol) }) + "\n")' \
+    "$page_dir/dist/version.json" "$VIEWER_VERSION" "$remote_version" "$protocol"
+  echo "the Viewer page reports $VIEWER_VERSION, spacewalk-remote $remote_version, protocol $protocol"
+}
+
+# build_and_upload_viewer SPACEWALK_DIR [NAME]
 # Vite inlines VITE_* at build time and a direct upload never sees the project's variables, so the
 # Worker's address is passed to the build. spacewalk's lockfile is not in git, hence npm install.
+# NAME is the release tag on prod, as for build_version.
 build_and_upload_viewer() {
   local page_dir="$1"
   (cd "$page_dir" && npm install --no-audit --no-fund --loglevel=error)
@@ -86,6 +108,7 @@ build_and_upload_viewer() {
   (cd "$page_dir" && VITE_SERVER_URL="$BASE_URL" npm run build)
   grep -q "${BASE_URL#https://}" "$page_dir"/dist/assets/*.js \
     || { echo "the built assets do not contain $BASE_URL; nothing was uploaded" >&2; return 1; }
+  write_viewer_version "$page_dir" "${2:-}"
   wrangler pages deploy "$page_dir/dist" --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true "$PAGES_ONLY"
 }
 
@@ -155,11 +178,38 @@ _wait_for_version() {
   printf '%s' "$got"
 }
 
+# _deployed JS_EXPRESSION
+# JS_EXPRESSION of what GET $BASE_URL/version answers (`r`); empty when there is no answer or the
+# expression throws. The same quoting rules as _mcp.
+_deployed() {
+  curl -s --max-time 15 "$BASE_URL/version" \
+    | node -e "let s='';process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{try{const r=JSON.parse(s);process.stdout.write(String($1))}catch{}})" \
+    || true
+}
+
+# _wait_for_deployed WANTED JS_EXPRESSION
+# Polls /version VERSION_POLLS times (default 6), ten seconds apart, until JS_EXPRESSION is WANTED:
+# a new Worker takes a moment to replace the old, and Pages to serve a new version.json.
+_wait_for_deployed() {
+  local got="" i
+  for ((i = 1; i <= ${VERSION_POLLS:-6}; i++)); do
+    got=$(_deployed "$2")
+    [[ "$got" == "$1" ]] && break
+    (( i < ${VERSION_POLLS:-6} )) && sleep 10
+  done
+  printf '%s' "$got"
+}
+
+check_worker_version() {
+  _check "/version reports the Worker just deployed" "$VERSION" "$(_wait_for_deployed "$VERSION" r.worker)"
+}
+
 check_worker() {
   local room_a room_a_again room_b
   echo "checking the Worker at $BASE_URL"
   _check "GET /mcp answers 405" 405 "$(_wait_for_code "$BASE_URL/mcp" 405)"
   _check "initialize reports the version just deployed" "$VERSION" "$(_wait_for_version "$VERSION")"
+  check_worker_version
   room_a=$(_hmac_room deploy-check-a); room_a_again=$(_hmac_room deploy-check-a); room_b=$(_hmac_room deploy-check-b)
   if [[ -n "$room_a" && "$room_a" == "$room_a_again" && "$room_a" != "$room_b" ]]; then
     _check "x-openai-session derives a stable Room id (the secret works)" ok ok
@@ -176,6 +226,8 @@ _http_code() { curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$1" || tru
 check_viewer() {
   echo "checking the Viewer page at $(viewer_url)"
   _check "the Viewer page answers 200" 200 "$(_http_code "$(viewer_url)")"
+  _check "/version reports the page just uploaded" "$VIEWER_VERSION" \
+    "$(_wait_for_deployed "$VIEWER_VERSION" "r.viewer.version ?? r.viewer.error")"
 }
 
 # What a release has to show once both halves are up: the Worker at $BASE_URL reports $VERSION,

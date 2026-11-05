@@ -68,7 +68,7 @@ deploy_worker --message "$TAG"
 ensure_secret
 check_worker
 ensure_pages_project
-build_and_upload_viewer "$WORK/spacewalk"
+build_and_upload_viewer "$WORK/spacewalk" "$TAG"
 check_viewer
 check_release
 finish_checks
