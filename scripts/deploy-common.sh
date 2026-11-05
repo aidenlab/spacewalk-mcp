@@ -16,11 +16,17 @@ wrangler()   { (cd "$SERVER_DIR" && npx wrangler "$@"); }
 viewer_url() { printf 'https://%s.pages.dev/viewer.html' "$PAGES_PROJECT"; }
 
 # build_version REPO_DIR [NAME]
-# `<NAME> (<short sha>)` for REPO_DIR's HEAD. NAME is the release tag on prod; left out, it is the
-# branch (HEAD when detached). Taken from git, so nothing is bumped by hand.
+# `<name> (<short sha>)` for REPO_DIR's HEAD, as igvjs-mcp and geenee build theirs. The name is NAME
+# when given (the release tag: deploy-prod.sh's worktree is detached), else the tag at HEAD, else
+# the branch, else "detached". The sha carries -dirty when tracked files differ from HEAD, so a
+# build of uncommitted work does not claim a commit it does not run. Taken from git, so nothing is
+# bumped by hand.
 build_version() {
-  local name="${2:-$(git -C "$1" rev-parse --abbrev-ref HEAD)}"
-  printf '%s (%s)' "$name" "$(git -C "$1" rev-parse --short HEAD)"
+  local name="${2:-}" dirty=""
+  [[ -n "$name" ]] || name="$(git -C "$1" describe --tags --exact-match HEAD 2>/dev/null \
+    || git -C "$1" symbolic-ref --short -q HEAD || echo detached)"
+  git -C "$1" diff --quiet HEAD || dirty="-dirty"
+  printf '%s (%s%s)' "$name" "$(git -C "$1" rev-parse --short HEAD)" "$dirty"
 }
 
 # deploy_worker [wrangler deploy options]

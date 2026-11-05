@@ -15,7 +15,8 @@ VIEWER_URL = "http://localhost:5173/"
 # The origins a Viewer may connect to /ws from, comma-separated. Any other Origin gets 403.
 VIEWER_ORIGINS = "http://localhost:5173, https://viewer.example/"
 # What this Worker runs, reported as its MCP serverInfo.version. The deploy scripts replace it with
-# `<branch> (<short sha>)` on dev and `<tag> (<short sha>)` on prod (`--var VERSION:...`).
+# `<branch> (<short sha>)` on dev and `<tag> (<short sha>)` on prod, with -dirty after the sha when
+# the checkout had uncommitted changes (`--var VERSION:...`, see build_version).
 VERSION = "local"
 
 # Secrets (`wrangler secret put <NAME> --env <env>`, see scripts/deploy-common.sh; for `wrangler dev`, in .dev.vars, see .dev.vars.example):

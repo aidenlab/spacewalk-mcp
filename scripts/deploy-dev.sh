@@ -31,8 +31,6 @@ source "$REPO_ROOT/scripts/deploy-common.sh"
 deploy_worker_target() {
   VERSION="$(build_version "$REPO_ROOT")"
   echo "spacewalk-mcp at $VERSION"
-  [[ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]] \
-    || echo "warning: this checkout has uncommitted changes; they will be deployed, and the version does not say so" >&2
   deploy_worker
   ensure_secret
   check_worker
