@@ -3,18 +3,25 @@
  * every Upstream: `worker` is this Worker's MCP serverInfo.version, and `viewer` is the Viewer
  * page's own version.json (written by the deploy scripts beside viewer.html), fetched now, not
  * cached, and passed through with its `url` added. Spacewalk adds `protocol`, since a Room refuses a
- * Viewer whose protocol version differs from the Worker's.
+ * Viewer whose protocol version differs from the Worker's. A request whose Accept names text/html
+ * (a browser opening the address) gets the same answer as a page; everything else (the deploy
+ * scripts, curl) gets the JSON.
  */
 import { PROTOCOL_VERSION } from '@aidenlab/spacewalk-remote/protocol'
+import { versionPage } from './versionPage.ts'
 
 /** Longer than this and the page counts as unreachable: /version answers either way. */
 const PAGE_TIMEOUT_MS = 5000
 
-export async function serveVersion(env: Env): Promise<Response> {
+export async function serveVersion(request: Request, env: Env): Promise<Response> {
   const body = { worker: env.VERSION, protocol: PROTOCOL_VERSION, viewer: await viewerVersion(env.VIEWER_URL) }
-  return Response.json(body, {
-    headers: { 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' },
-  })
+  const headers = { 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' }
+  if ((request.headers.get('Accept') ?? '').includes('text/html')) {
+    return new Response(versionPage(new URL(request.url).origin, body), {
+      headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' },
+    })
+  }
+  return Response.json(body, { headers })
 }
 
 type ViewerVersion = { url: string; error?: string; [key: string]: unknown }

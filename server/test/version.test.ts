@@ -65,4 +65,46 @@ describe('GET /version', () => {
     const { viewer } = await (await SELF.fetch('https://example.com/version')).json<{ viewer: object }>()
     expect(viewer).toEqual({ url: PAGE_VERSION_URL, version: 'main (9e1d2b7)' })
   })
+
+  it('answers JSON to curl and scripts, which do not ask for HTML', async () => {
+    servePage(() => Response.json({ version: 'main (9e1d2b7)' }))
+    const response = await SELF.fetch('https://example.com/version', { headers: { Accept: '*/*' } })
+    expect(response.headers.get('Content-Type')).toContain('application/json')
+  })
+
+  describe('opened in a browser', () => {
+    // What a browser sends when the address is opened.
+    const BROWSER = { Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' }
+    const open = async () => SELF.fetch('https://example.com/version', { headers: BROWSER })
+
+    it('answers a page naming both versions, where each runs, and what else each reports', async () => {
+      servePage(() => Response.json({ version: 'main (9e1d2b7)', 'spacewalk-remote': '0.3.1', protocol: 2 }))
+      const response = await open()
+      expect(response.status).toBe(200)
+      expect(response.headers.get('Content-Type')).toBe('text/html; charset=utf-8')
+      expect(response.headers.get('Cache-Control')).toBe('no-store')
+      const html = await response.text()
+      expect(html).toMatch(/^<!doctype html>/)
+      expect(html).toContain(WORKER)
+      expect(html).toContain('main (9e1d2b7)')
+      expect(html).toContain('example.com')
+      expect(html).toContain('localhost:5173')
+      expect(html).toContain('spacewalk-remote')
+      expect(html).toContain('0.3.1')
+    })
+
+    it("shows why the page's version could not be read", async () => {
+      servePage(() => new Response('Not found', { status: 404 }))
+      const html = await (await open()).text()
+      expect(html).toContain('could not be read: HTTP 404')
+    })
+
+    it("escapes what the page's file says", async () => {
+      servePage(() => Response.json({ version: '<script>alert(1)</script>', '<b>': '<i>' }))
+      const html = await (await open()).text()
+      expect(html).not.toContain('<script>alert(1)</script>')
+      expect(html).not.toContain('<b>')
+      expect(html).toContain('&#60;script&#62;')
+    })
+  })
 })
