@@ -29,6 +29,8 @@ PAGES_PROJECT=spacewalk-viewer-dev
 source "$REPO_ROOT/scripts/deploy-common.sh"
 
 deploy_worker_target() {
+  VERSION="$(build_version "$REPO_ROOT")"
+  echo "spacewalk-mcp at $VERSION"
   deploy_worker
   ensure_secret
   check_worker

@@ -14,6 +14,10 @@ account_id = "1eadb18bb8557fd1bd06b1d0310a902e"
 VIEWER_URL = "http://localhost:5173/"
 # The origins a Viewer may connect to /ws from, comma-separated. Any other Origin gets 403.
 VIEWER_ORIGINS = "http://localhost:5173, https://viewer.example/"
+# What this Worker runs, reported as its MCP serverInfo.version. The deploy scripts replace it with
+# `<branch> (<short sha>)` on dev and `<tag> (<short sha>)` on prod, with -dirty after the sha when
+# the checkout had uncommitted changes (`--var VERSION:...`, see build_version).
+VERSION = "local"
 
 # Secrets (`wrangler secret put <NAME> --env <env>`, see scripts/deploy-common.sh; for `wrangler dev`, in .dev.vars, see .dev.vars.example):
 # SESSION_HMAC_SECRET - HMAC key deriving Room ids from x-openai-session (ChatGPT);
@@ -53,6 +57,8 @@ class_name = "Room"
 # The Viewer page, not the full app at /: the full app ignores ?room=.
 VIEWER_URL = "https://spacewalk-viewer-dev.pages.dev/viewer.html"
 VIEWER_ORIGINS = "https://spacewalk-viewer-dev.pages.dev"
+# Replaced at deploy time; see VERSION in [vars].
+VERSION = "unknown"
 
 # Production: Worker spacewalk-mcp at https://spacewalk-mcp.3dg.io, paired with the Pages project
 # spacewalk-viewer at https://spacewalk-viewer.pages.dev. It shares nothing with dev: its own Rooms
@@ -78,3 +84,5 @@ class_name = "Room"
 # The Viewer page, not the full app at /: the full app ignores ?room=.
 VIEWER_URL = "https://spacewalk-viewer.pages.dev/viewer.html"
 VIEWER_ORIGINS = "https://spacewalk-viewer.pages.dev"
+# Replaced at deploy time; see VERSION in [vars].
+VERSION = "unknown"

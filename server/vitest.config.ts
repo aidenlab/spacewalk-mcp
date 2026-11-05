@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     cloudflareTest({
       wrangler: { configPath: './wrangler.toml' },
-      miniflare: { bindings: { SESSION_HMAC_SECRET: 'test-session-hmac-secret' } },
+      miniflare: { bindings: { SESSION_HMAC_SECRET: 'test-session-hmac-secret', VERSION: 'main (a1b2c3d)' } },
     }),
   ],
   test: {

@@ -5,6 +5,7 @@
 #   WRANGLER_ENV   the [env.*] of that wrangler.toml
 #   BASE_URL       the Worker's address
 #   PAGES_PROJECT  the Pages project the Viewer page is uploaded to
+#   VERSION        what the Worker reports as its MCP serverInfo.version (see build_version)
 # VIEWER_URL in [env.*] must be the address viewer_url gives here.
 
 # Pages commands do not read wrangler.toml, so they are given its account here.
@@ -14,8 +15,22 @@ CHECK_FAILURES=0
 wrangler()   { (cd "$SERVER_DIR" && npx wrangler "$@"); }
 viewer_url() { printf 'https://%s.pages.dev/viewer.html' "$PAGES_PROJECT"; }
 
+# build_version REPO_DIR [NAME]
+# `<name> (<short sha>)` for REPO_DIR's HEAD, as igvjs-mcp and geenee build theirs. The name is NAME
+# when given (the release tag: deploy-prod.sh's worktree is detached), else the tag at HEAD, else
+# the branch, else "detached". The sha carries -dirty when tracked files differ from HEAD, so a
+# build of uncommitted work does not claim a commit it does not run. Taken from git, so nothing is
+# bumped by hand.
+build_version() {
+  local name="${2:-}" dirty=""
+  [[ -n "$name" ]] || name="$(git -C "$1" describe --tags --exact-match HEAD 2>/dev/null \
+    || git -C "$1" symbolic-ref --short -q HEAD || echo detached)"
+  git -C "$1" diff --quiet HEAD || dirty="-dirty"
+  printf '%s (%s%s)' "$name" "$(git -C "$1" rev-parse --short HEAD)" "$dirty"
+}
+
 # deploy_worker [wrangler deploy options]
-deploy_worker() { wrangler deploy --env "$WRANGLER_ENV" "$@"; }
+deploy_worker() { wrangler deploy --env "$WRANGLER_ENV" --var "VERSION:$VERSION" "$@"; }
 
 # Sets SESSION_HMAC_SECRET only if it is missing: changing it moves every ChatGPT conversation to a
 # new Room. A list that fails stops here, since read as "not set" it would change the secret.
@@ -96,10 +111,31 @@ _hmac_room() {
     | grep -oE 'No such Room as [0-9A-Z]{10}' | grep -oE '[0-9A-Z]{10}$' || true
 }
 
+# The serverInfo.version an MCP initialize gets back; empty if there is none.
+_server_version() {
+  curl -s --max-time 15 -X POST "$BASE_URL/mcp" \
+    -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"deploy-check","version":"1"}}}' \
+    | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).result.serverInfo.version))}catch{}})' \
+    || true
+}
+
+# Polls for up to a minute: the Worker just deployed may take a moment to replace the one before.
+_wait_for_version() {
+  local got="" i
+  for i in 1 2 3 4 5 6; do
+    got=$(_server_version)
+    [[ "$got" == "$1" ]] && break
+    sleep 10
+  done
+  printf '%s' "$got"
+}
+
 check_worker() {
   local room_a room_a_again room_b
   echo "checking the Worker at $BASE_URL"
   _check "GET /mcp answers 405" 405 "$(_wait_for_code "$BASE_URL/mcp" 405)"
+  _check "initialize reports the version just deployed" "$VERSION" "$(_wait_for_version "$VERSION")"
   room_a=$(_hmac_room deploy-check-a); room_a_again=$(_hmac_room deploy-check-a); room_b=$(_hmac_room deploy-check-b)
   if [[ -n "$room_a" && "$room_a" == "$room_a_again" && "$room_a" != "$room_b" ]]; then
     _check "x-openai-session derives a stable Room id (the secret works)" ok ok

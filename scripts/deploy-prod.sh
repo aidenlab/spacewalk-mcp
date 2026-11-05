@@ -59,6 +59,7 @@ BASE_URL=https://spacewalk-mcp.3dg.io
 PAGES_PROJECT=spacewalk-viewer
 # shellcheck source=scripts/deploy-common.sh
 source "$WORK/mcp/scripts/deploy-common.sh"
+VERSION="$(build_version "$WORK/mcp" "$TAG")"
 
 (cd "$WORK/mcp" && npm ci --no-audit --no-fund --loglevel=error && npm run test:run)
 
