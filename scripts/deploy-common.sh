@@ -111,13 +111,21 @@ _hmac_room() {
     | grep -oE 'No such Room as [0-9A-Z]{10}' | grep -oE '[0-9A-Z]{10}$' || true
 }
 
-# The serverInfo.version an MCP initialize gets back; empty if there is none.
-_server_version() {
+# _mcp METHOD PARAMS_JSON JS_EXPRESSION
+# Posts one JSON-RPC request to $BASE_URL/mcp and prints JS_EXPRESSION of its result (`r`); empty
+# when there is no answer or the expression throws.
+_mcp() {
   curl -s --max-time 15 -X POST "$BASE_URL/mcp" \
     -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
-    -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"deploy-check","version":"1"}}}' \
-    | node -e 'let s="";process.stdin.on("data",(d)=>(s+=d)).on("end",()=>{try{process.stdout.write(String(JSON.parse(s).result.serverInfo.version))}catch{}})' \
+    -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":$2}" \
+    | node -e "let s='';process.stdin.on('data',(d)=>(s+=d)).on('end',()=>{try{const r=JSON.parse(s).result;process.stdout.write(String($3))}catch{}})" \
     || true
+}
+
+# The serverInfo.version an MCP initialize gets back; empty if there is none.
+_server_version() {
+  _mcp initialize '{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"deploy-check","version":"1"}}' \
+    r.serverInfo.version
 }
 
 # Polls for up to a minute: the Worker just deployed may take a moment to replace the one before.
@@ -150,6 +158,22 @@ check_worker() {
 check_viewer() {
   echo "checking the Viewer page at $(viewer_url)"
   _check "the Viewer page answers 200" 200 "$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$(viewer_url)" || true)"
+}
+
+# What a release has to show once both halves are up: the Worker at $BASE_URL reports $VERSION,
+# lists the Spacewalk tools, and its Join link is on the Viewer page and loads. open_viewer opens a
+# Room, which expires unused after a day.
+check_release() {
+  local tools room_link page
+  page="$(viewer_url)"
+  echo "checking the release at $BASE_URL"
+  _check "initialize reports $VERSION" "$VERSION" "$(_server_version)"
+  tools="$(_mcp tools/list '{}' "r.tools.map((t)=>t.name).join(' ')")"
+  _check "tools/list lists open_viewer and read_viewer_state" yes \
+    "$([[ " $tools " == *" open_viewer "* && " $tools " == *" read_viewer_state "* ]] && echo yes || echo "${tools:-no tools}")"
+  room_link="$(_mcp tools/call '{"name":"open_viewer","arguments":{}}' r.structuredContent.roomLink)"
+  _check "the Join link is on $page" yes "$([[ "$room_link" == "$page?room="* ]] && echo yes || echo "${room_link:-no link}")"
+  _check "the Join link loads" 200 "$(curl -sL -o /dev/null -w '%{http_code}' --max-time 15 "$room_link" || true)"
 }
 
 # Run last: the deployment is in place by now, so this reports rather than undoes anything.
