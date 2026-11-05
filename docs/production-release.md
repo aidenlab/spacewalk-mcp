@@ -89,7 +89,7 @@ The script does these steps in order, stopping if one fails:
 2. Runs the tests. If they fail, nothing has been deployed.
 3. Deploys the Worker.
 4. Sets `SESSION_HMAC_SECRET`, only if it is missing.
-5. Checks the Worker: `/mcp` answers, the secret works, and `/ws` accepts the production page and refuses other origins.
+5. Checks the Worker: `/mcp` answers and reports `<tag> (<short sha>)` as its version, the secret works, and `/ws` accepts the production page and refuses other origins.
 6. Creates the Pages project, only if it is missing.
 7. Builds the Viewer page against the production Worker and uploads it.
 8. Checks that the Viewer page answers.

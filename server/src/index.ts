@@ -103,7 +103,7 @@ async function handleMcpRequest(request: Request, env: Env): Promise<Response> {
       hostRoomId = await deriveRoomId(openaiSession, env.SESSION_HMAC_SECRET)
     }
 
-    const mcpServer = new McpServer({ name: 'spacewalk', version: '0.0.0' })
+    const mcpServer = new McpServer({ name: 'spacewalk', version: env.VERSION })
     registerTools(mcpServer, {
       viewerUrl: env.VIEWER_URL,
       roomById: (roomId) => env.ROOM.getByName(roomId),
