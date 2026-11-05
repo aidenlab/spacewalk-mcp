@@ -696,7 +696,7 @@ td code, th code { font-size: 0.92em; }
     <tr><th>Rooms</th><td>Simulated on the laptop, stored under <code>server/.wrangler/</code></td><td>Dev’s own</td><td>Production’s own</td></tr>
     <tr><th class="viewer-ink">Viewer page</th><td>Vite’s dev server on <code>localhost:5173</code>, in <code>spacewalk</code></td><td>Pages project <code>spacewalk-viewer-dev</code></td><td>Pages project <code>spacewalk-viewer</code></td></tr>
     <tr><th>Secret</th><td><code>server/.dev.vars</code></td><td>Set by <code>deploy-dev.sh</code> if missing</td><td>Set by <code>deploy-prod.sh</code> if missing</td></tr>
-    <tr><th>Shipped from</th><td>The working trees, live</td><td>The working trees of both repos as they stand, uncommitted changes included, by <code>scripts/deploy-dev.sh</code></td><td>One <code>prod-YYYY-MM-DD</code> tag in both repos, checked out fresh, by <code>scripts/deploy-prod.sh</code></td></tr>
+    <tr><th>Shipped from</th><td>The working trees, live</td><td>The working trees of both repos as they stand, uncommitted changes included, by <code>scripts/deploy-dev.sh</code></td><td>One <code>prod-YYYY-MM-DD</code> tag in <code>spacewalk-mcp</code>, checked out fresh with the <code>spacewalk</code> commit its <code>viewer.pin</code> names, by <code>scripts/deploy-prod.sh</code></td></tr>
     <tr><th>Exists</th><td>While running</td><td>Yes. Worker and Viewer page last deployed 3 November 2026</td><td>Not yet. The first release creates the Worker, its domain, the Pages project and the secret</td></tr>
   </tbody>
 </table>

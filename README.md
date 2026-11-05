@@ -46,16 +46,15 @@ scripts/deploy-dev.sh [worker|viewer|all]   # test, deploy to dev, check the res
 
 To check the deploy in Claude and ChatGPT, see `docs/checking-a-host.md`.
 
-To release, tag `main` in both repos with the same name, push both tags and deploy that tag:
+To release, tag `main` here, push the tag and deploy it. `spacewalk` is not tagged: `viewer.pin` names the `spacewalk` commit the Viewer page is built from, and `scripts/pin-viewer.sh` moves it.
 
 ```sh
-git tag prod-2026-11-01 && git push origin prod-2026-11-01                                  # here
-git -C ../spacewalk tag prod-2026-11-01 && git -C ../spacewalk push origin prod-2026-11-01  # and in spacewalk
+git tag prod-2026-11-01 origin/main && git push origin prod-2026-11-01
 scripts/deploy-prod.sh prod-2026-11-01
 ```
 
-`deploy-prod.sh` tests and deploys from throwaway worktrees at the tag, so uncommitted changes never ship. A second release on a day is `prod-2026-11-01.1`. To roll back, deploy an earlier tag. The first release also creates the Worker, the Pages project and the secret. The connector URL to give Claude or ChatGPT is the Worker's address plus `/mcp`.
+`deploy-prod.sh` tests and deploys from throwaway worktrees, this repo at the tag and `spacewalk` at the pinned commit, so uncommitted changes never ship. A second release on a day is `prod-2026-11-01.1`. To roll back, deploy an earlier tag. The first release also creates the Worker, the Pages project and the secret. The connector URL to give Claude or ChatGPT is the Worker's address plus `/mcp`.
 
-[`docs/production-release.md`](docs/production-release.md) is the full release procedure, with its checks and rollback.
+[`docs/production-release.md`](docs/production-release.md) is the full release procedure, with its checks and rollback. [`docs/production-deployment.md`](docs/production-deployment.md) is the short version: tagging a release and moving the pin.
 
 [`docs/dev-check.md`](docs/dev-check.md) is the cheat sheet for `scripts/dev-check.mjs`, which calls one tool on the dev Worker from the terminal: a smoke test without a Host.
