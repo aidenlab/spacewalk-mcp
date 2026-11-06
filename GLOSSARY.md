@@ -20,6 +20,10 @@ _Avoid_: session, channel
 The link that brings anyone into a Room.
 _Avoid_: URL, invite, share link
 
+**Room indicator**:
+What a Viewer shows of where it stands with its Room: connecting, joined (with the Room id), reconnecting, let go for good, or in no Room at all. The same term is used by the Juicebox and IGV viewers.
+_Avoid_: connection status, online dot
+
 **Participant**:
 Anyone with a Room open, the Organizer included. No Participant controls the Room: anyone's change counts the same, and the camera follows whoever last took hold of it (see **Camera holder**).
 _Avoid_: driver, user, collaborator
