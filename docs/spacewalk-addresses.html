@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>spacewalk-mcp’s addresses</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400&display=swap">
+<style>
+/* The visual language of how-spacewalk-mcp-works.html and geenee’s geenee-addresses.html: one 38rem reading column, tables across the page. Green for Spacewalk. */
+:root {
+  --bg: #f5f6f4; --box: #ffffff; --fg: #1b1d1c; --muted: #636966; --rule: #cdd2ce;
+  --igv: #2a5f9e; --jb: #b8231a; --sw: #2e7d4f;
+  --serif: "Source Serif 4", "Iowan Old Style", Georgia, serif;
+  --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #151716; --box: #1e2120; --fg: #e5e7e4; --muted: #9aa19c; --rule: #3b403d; --igv: #7fadea; --jb: #ff7566; --sw: #6cc58f; color-scheme: dark; }
+}
+
+body { margin: 0; background: var(--bg); color: var(--fg); font: 1.0625rem/1.6 var(--serif); }
+.page {
+  max-width: 64rem; margin-inline: auto;
+  padding: 2.5rem max(16px, env(safe-area-inset-right, 0px)) 5rem max(16px, env(safe-area-inset-left, 0px));
+}
+.page :is(h1, h2, h3, p, ol, ul) { max-width: 38rem; }
+
+h1 { font: 600 2rem/1.15 var(--sans); letter-spacing: -0.01em; margin: 0 0 0.75rem; text-wrap: balance; }
+.lede { font-size: 1.2rem; line-height: 1.5; color: var(--muted); margin: 0 0 2rem; }
+h2 {
+  font: 600 1.0625rem var(--sans); margin: 3.25rem 0 0.75rem; padding-top: 0.75rem;
+  border-top: 1px solid var(--fg); text-wrap: balance; scroll-margin-top: 5rem;
+}
+p { margin: 0 0 1rem; }
+ol, ul { margin: 0 0 1rem; padding-left: 1.4rem; }
+li { margin-bottom: 0.4rem; }
+code { font-family: var(--mono); font-size: 0.84em; }
+a { color: inherit; text-decoration-color: var(--rule); text-underline-offset: 0.15em; }
+a:hover { text-decoration-color: currentColor; }
+:is(a, button, input):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.igv { color: var(--igv); }
+.jb { color: var(--jb); }
+.sw { color: var(--sw); }
+.muted { color: var(--muted); }
+
+.toc { font: 0.85rem/1.5 var(--sans); margin: 0 0 1rem; padding: 0; list-style: none; columns: 2 14rem; }
+.toc li { margin: 0 0 0.2rem; }
+.toc a { text-decoration: none; color: var(--muted); }
+.toc a:hover { color: var(--fg); }
+
+/* The bar: which Deployment, which Room. Everything below reads from it. */
+.bar {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--bg); border-bottom: 1px solid var(--rule);
+  font: 0.85rem var(--sans);
+}
+.bar .inner {
+  max-width: 64rem; margin-inline: auto;
+  padding: 0.6rem max(16px, env(safe-area-inset-right, 0px)) 0.6rem max(16px, env(safe-area-inset-left, 0px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.75rem;
+}
+.bar .name { font: 400 0.85rem var(--mono); color: var(--muted); }
+.field { display: flex; align-items: center; gap: 0.6rem; }
+.field > span { color: var(--muted); }
+.choice { display: flex; gap: 0.15rem; }
+.choice label { cursor: pointer; padding: 0.2rem 0.45rem; border-radius: 3px; color: var(--muted); }
+.choice input { position: absolute; opacity: 0; pointer-events: none; }
+.choice input:checked + span { color: var(--fg); font-weight: 600; }
+.choice label:has(input:checked) { background: var(--box); box-shadow: inset 0 0 0 1px var(--rule); }
+.choice label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+#room {
+  width: 8.5rem; padding: 0.3rem 0.5rem; font: 0.85rem var(--mono); letter-spacing: 0.03em; text-transform: uppercase;
+  color: var(--fg); background: var(--box); border: 1px solid var(--rule); border-radius: 3px;
+}
+#room::placeholder { text-transform: none; letter-spacing: 0; color: var(--muted); font-family: var(--sans); }
+#room[aria-invalid="true"] { border-color: var(--jb); }
+button {
+  padding: 0.3rem 0.7rem; cursor: pointer; font: 500 0.8rem var(--sans);
+  color: var(--bg); background: var(--fg); border: 1px solid var(--fg); border-radius: 3px;
+}
+button.quiet { color: var(--muted); background: transparent; border-color: var(--rule); }
+button.quiet:hover { color: var(--fg); }
+#status { color: var(--muted); }
+#status.error { color: var(--jb); }
+
+/* Tables */
+.tablewrap { overflow-x: auto; margin: 1.25rem 0 1.5rem; }
+table { border-collapse: collapse; width: 100%; font: 0.85rem/1.4 var(--sans); }
+th, td { text-align: left; vertical-align: top; padding: 0.55rem 1.1rem 0.55rem 0; border-bottom: 1px solid var(--rule); }
+thead th { font-weight: 600; border-bottom: 1px solid var(--fg); }
+tbody th { font-weight: 600; white-space: nowrap; }
+tbody tr:last-child :is(th, td) { border-bottom: 0; }
+td.addr { white-space: nowrap; }
+td.addr a, td.addr span { font: 0.82rem var(--mono); }
+a.off { color: var(--muted); }
+td.code { white-space: nowrap; font: 0.8rem var(--mono); color: var(--muted); }
+
+/* Commands */
+.cmd { position: relative; max-width: 50rem; margin: 0.5rem 0 1.5rem; }
+.cmd pre {
+  margin: 0; padding: 0.8rem 5rem 0.8rem 0.9rem; overflow-x: auto;
+  font: 0.8rem/1.55 var(--mono); background: var(--box); border: 1px solid var(--rule); border-radius: 4px;
+}
+.cmd button { position: absolute; top: 0.5rem; right: 0.5rem; }
+.cmd .expect { font: 0.8rem/1.45 var(--sans); color: var(--muted); margin: 0.4rem 0 0; }
+h3 { font: 600 0.95rem var(--sans); margin: 2rem 0 0.25rem; }
+
+.steps { counter-reset: step; list-style: none; padding: 0; max-width: 38rem; }
+.steps > li { counter-increment: step; position: relative; padding-left: 2rem; margin-bottom: 0.9rem; }
+.steps > li::before { content: counter(step); position: absolute; left: 0; font: 600 0.85rem var(--sans); color: var(--muted); }
+
+.end { font: 0.8rem var(--sans); color: var(--muted); margin-top: 3.5rem; max-width: 38rem; }
+:root { --accent: var(--sw); }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="inner">
+    <span class="name">spacewalk-mcp</span>
+    <div class="field" role="radiogroup" aria-label="Deployment">
+      <span>Deployment</span>
+      <div class="choice">
+        <label><input type="radio" name="deployment" value="prod"><span>prod</span></label>
+        <label><input type="radio" name="deployment" value="dev" checked><span>dev</span></label>
+        <label><input type="radio" name="deployment" value="local"><span>local</span></label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="room"><span class="muted">Room</span></label>
+      <input id="room" placeholder="Room id" maxlength="12" autocomplete="off" spellcheck="false">
+      <button type="button" id="new-room">New Room</button>
+      <span id="status" aria-live="polite"></span>
+    </div>
+  </div>
+</div>
+
+<main class="page">
+<h1>spacewalk-mcp’s addresses</h1>
+<p class="lede">Every address the Spacewalk Upstream answers at, its Worker and its Viewer, what each one shows, and the commands to poke at them. Pick a Deployment and a Room above, and every link and command on this page fills in.</p>
+
+<ul class="toc">
+  <li><a href="#room-addresses">A Room’s addresses</a></li>
+  <li><a href="#no-room">Addresses that need no Room</a></li>
+  <li><a href="#terminal">From the terminal</a></li>
+  <li><a href="#walk">A walk through every page</a></li>
+  <li><a href="#tricks">Tricks worth knowing</a></li>
+</ul>
+
+<h2 id="room-addresses">A Room’s addresses</h2>
+<p>A Room is what ties one conversation to the Viewers showing its 3D view. Its id is ten letters and digits, and the Worker accepts it in either case. Press <b>New Room</b> to open one on the chosen Deployment, the way <code>open_viewer</code> does, or paste an id from a Join card or from geenee.</p>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Address</th><th>What it shows</th><th>Who uses it</th></tr></thead>
+  <tbody>
+    <tr><td class="addr"><a data-url="{viewer}?room={room}"></a></td>
+      <td><b>The Room link.</b> The Viewer joins the Room, and its Room indicator says where it stands. Everyone on it is a Participant, and the camera follows whoever last took hold of it.</td>
+      <td>The Organizer, from the Join card or the model, and Guests it is shared with.</td></tr>
+    <tr><td class="addr"><span data-url="{ws}/ws?room={room}"></span></td>
+      <td>Not a page: the WebSocket a Viewer opens to its Room. Refused with <code>403</code> from any origin but a Viewer’s, <code>426</code> without a WebSocket upgrade, <code>400</code> with no room. An unknown or expired Room is refused over the socket itself.</td>
+      <td>The Viewer, for as long as it is open.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>A Room expires after a day without use. Its Viewers are told “This Room has expired.” and let go, and what it showed is gone for good. Every tool but <code>open_viewer</code> then refuses the Room; <code>open_viewer</code> with the same <code>room</code> starts it over, empty.</p>
+
+<h2 id="no-room">Addresses that need no Room</h2>
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Address</th><th>Answer</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td class="addr"><a data-url="{mcp}/version"></a></td><td class="code">200</td>
+      <td>What this Deployment runs: the Worker’s tag or branch and commit, the Room protocol, and the Viewer’s version, read from its <code>version.json</code>. A page in a browser, JSON to <code>curl</code>.</td></tr>
+    <tr><td class="addr"><a data-url="{pages}/version.json"></a></td><td class="code">200</td>
+      <td>The Viewer’s own version, with the <code>spacewalk-remote</code> it bundles and the protocol it speaks.</td></tr>
+    <tr><td class="addr"><a data-url="{viewer}"></a></td><td class="code">200</td>
+      <td>The Viewer in no Room.</td></tr>
+    <tr><td class="addr"><a data-url="{pages}/?room={room}"></a></td><td class="code">200</td>
+      <td>Not a Room link: the full Spacewalk app, which ignores <code>?room=</code>. Only the Viewer page joins Rooms.</td></tr>
+    <tr><td class="addr"><a data-url="{mcp}/mcp"></a></td><td class="code">405</td>
+      <td>The Connector address. Hosts POST to it; a browser’s GET is refused.</td></tr>
+    <tr><td class="addr"><a data-url="{mcp}/ws"></a></td><td class="code">403</td>
+      <td>The WebSocket address, refused to a browser tab because it is not a Viewer.</td></tr>
+    <tr><td class="addr"><a data-url="{mcp}/"></a></td><td class="code">404</td>
+      <td>The Worker serves nothing else. The Viewer lives on its own host.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="terminal">From the terminal</h2>
+<p>Each command uses the Deployment and Room chosen above. <code>/mcp</code> needs no sign-in and no session: one POST is one call, and <code>room</code> names the Room.</p>
+
+<h3>Open a Room</h3>
+<div class="cmd"><pre data-cmd="open"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">Prints the Room link, with the new Room id in it. This is what <b>New Room</b> does.</p></div>
+
+<h3>List the example ensembles</h3>
+<div class="cmd"><pre data-cmd="examples"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">The <code>.sw</code> files to try, by group. It needs no Room.</p></div>
+
+<h3>Drive the Viewer</h3>
+<div class="cmd"><pre data-cmd="load"></pre><button type="button" class="quiet">Copy</button></div>
+<div class="cmd"><pre data-cmd="style"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">With the Room link open, the Viewer loads A549 chr21:28–30 Mb, then draws it as a ribbon. Any tool from the list below works the same way, with the Room id as <code>room</code>.</p></div>
+
+<h3>Ask about a Room</h3>
+<div class="cmd"><pre data-cmd="count"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">How many Viewers are in the Room. geenee uses this to mark Spacewalk’s tab as connected.</p></div>
+<div class="cmd"><pre data-cmd="state"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">What the Room shows: the ensemble, the trace, the render style and the rest of the Viewer state.</p></div>
+
+<h3>List the tools</h3>
+<div class="cmd"><pre data-cmd="tools"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">Fourteen tools. geenee serves them renamed <code>spacewalk_…</code>, less <code>open_viewer</code>, <code>get_shareable_url</code> and <code>read_viewer_count</code>.</p></div>
+
+<h3>Check the version</h3>
+<div class="cmd"><pre data-cmd="version"></pre><button type="button" class="quiet">Copy</button>
+<p class="expect">The Worker, the Room protocol and the Viewer. The two protocol numbers must match.</p></div>
+
+<h2 id="walk">A walk through every page</h2>
+<p>After a deploy, this covers everything the Viewer and the Worker show.</p>
+<ol class="steps">
+  <li>Press <b>New Room</b>, or say “open Spacewalk” in a Host connected to this Deployment and paste the Room id from the Join card.</li>
+  <li>Open <a data-url="{viewer}?room={room}"></a>. The Room indicator says it has joined.</li>
+  <li>Run <a href="#terminal">Drive the Viewer</a>, and watch the ensemble load and turn into a ribbon.</li>
+  <li>Open the same Room link in a second window: a Guest. Turn the structure in one, and the other follows.</li>
+  <li>Run <a href="#terminal">Ask about a Room</a>. It should count two Viewers.</li>
+  <li>Open <a data-url="{mcp}/version"></a> to confirm which build is live.</li>
+</ol>
+
+<h2 id="tricks">Tricks worth knowing</h2>
+<ul>
+  <li><b>geenee’s Room id works here.</b> <code>open_viewer</code> accepts an id it has never seen, which is how geenee opens its own Room id in Spacewalk’s Worker. An id from a geenee Card drives the same Viewer that geenee’s Workspace frames.</li>
+  <li><b>Only the Viewer page joins Rooms.</b> The full app at <code>/</code> ignores <code>?room=</code>, so a Room link must point at <code>viewer.html</code>. The Viewer also takes <code>?file=</code>, which wins over <code>?room=</code>.</li>
+  <li><b>ChatGPT</b> sends no session id. Its <code>x-openai-session</code> header is turned into a Room id instead.</li>
+  <li><b>Local development</b> runs the Worker on <code>localhost:8787</code> (<code>npm run dev:server</code>) and the Viewer on <code>localhost:5173</code> (<code>npm run dev</code> in the <code>spacewalk</code> repo). Start the Worker with <code>--var VIEWER_URL:http://localhost:5173/viewer.html</code> so its Room links reach the Viewer page. Secrets go in <code>.dev.vars</code>.</li>
+</ul>
+
+<p class="end">Written 16 November 2026 from the routes in <code>server/src/index.ts</code>, the tools in <code>server/src/tools.ts</code> and the Room in <code>server/src/room.ts</code>, and checked against the dev Deployment. The words used here are defined in <code>GLOSSARY.md</code>; how the parts fit together is in <code>how-spacewalk-mcp-works.html</code>. geenee keeps the same page for itself, <code>geenee-addresses.html</code>.</p>
+</main>
+
+<script>
+  const SITES = {
+      "prod": {
+          "mcp": "https://spacewalk-mcp.3dg.io",
+          "ws": "wss://spacewalk-mcp.3dg.io",
+          "viewer": "https://spacewalk-viewer.pages.dev/viewer.html",
+          "pages": "https://spacewalk-viewer.pages.dev"
+      },
+      "dev": {
+          "mcp": "https://spacewalk-mcp-dev.3dg.io",
+          "ws": "wss://spacewalk-mcp-dev.3dg.io",
+          "viewer": "https://spacewalk-viewer-dev.pages.dev/viewer.html",
+          "pages": "https://spacewalk-viewer-dev.pages.dev"
+      },
+      "local": {
+          "mcp": "http://localhost:8787",
+          "ws": "ws://localhost:8787",
+          "viewer": "http://localhost:5173/viewer.html",
+          "pages": "http://localhost:5173"
+      }
+  };
+
+  const ROOM_ID = /^[0-9A-HJKMNP-TV-Z]{10}$/;
+  const PLACEHOLDER = "<Room id>";
+  const roomInput = document.getElementById("room");
+  const status = document.getElementById("status");
+
+  // The choices live in the address, #dev/7ZQH4M2K9X, so a reload or a bookmark comes back to them.
+  const [hashDeployment, hashRoom] = location.hash.slice(1).split("/");
+  if (hashDeployment in SITES) document.querySelector(`input[value="${hashDeployment}"]`).checked = true;
+  if (hashRoom) roomInput.value = hashRoom;
+
+  const deployment = () => document.querySelector('input[name="deployment"]:checked').value;
+  const room = () => { const id = roomInput.value.trim().toUpperCase(); return ROOM_ID.test(id) ? id : null; };
+
+  const MCP_HEADERS = `-H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream'`;
+  const rpc = (id, method, params) => JSON.stringify(params ? { jsonrpc: "2.0", id, method, params } : { jsonrpc: "2.0", id, method });
+  const toolCall = (id, name, args) => rpc(id, "tools/call", { name, arguments: args });
+  const curl = (site, body, extra = "") => `curl -s ${site.mcp}/mcp \\\n  ${MCP_HEADERS}${extra} \\\n  -d '${body}'`;
+
+  // What a Host sends, from the page itself: /mcp allows any origin and shows the page its mcp-session-id.
+  async function post(site, body, session) {
+    const headers = { "Content-Type": "application/json", Accept: "application/json, text/event-stream" };
+    if (session) headers["mcp-session-id"] = session;
+    const reply = await fetch(`${site.mcp}/mcp`, { method: "POST", headers, body });
+    if (!reply.ok) throw new Error(`${reply.status} from /mcp`);
+    return { session: reply.headers.get("mcp-session-id"), json: await reply.json() };
+  }
+
+  // open_viewer with no room: the Worker mints the Room id and answers with it and the Room link.
+  const OPEN_ROOM = async (site) => (await post(site, toolCall(1, "open_viewer", {}))).json.result?.structuredContent?.room;
+  const LOCAL_HINT = "Could not reach localhost:8787. Is npm run dev:server running?";
+  const COMMANDS = {
+    open: (s) => `${curl(s, toolCall(1, "open_viewer", {}))} \\\n  | grep -o '"roomLink":"[^"]*"'`,
+    examples: (s) => curl(s, toolCall(2, "list_example_ensembles", {})),
+    load: (s, r) => curl(s, toolCall(3, "load_ensemble", { url: "https://pub-398373e8d1204c57beab2ae62ef6cc91.r2.dev/A549_chr21-28-30Mb.sw", room: r })),
+    style: (s, r) => curl(s, toolCall(4, "set_render_style", { style: "ribbon", room: r })),
+    count: (s, r) => curl(s, toolCall(5, "read_viewer_count", { room: r })),
+    state: (s, r) => curl(s, toolCall(6, "read_viewer_state", { room: r })),
+    tools: (s) => `${curl(s, rpc(7, "tools/list"))} \\\n  | grep -o '"name":"[^"]*"'`,
+    version: (s) => `curl -s ${s.mcp}/version`,
+  };
+
+  const fill = (template, site, id) => template
+    .replaceAll("{mcp}", site.mcp).replaceAll("{ws}", site.ws)
+    .replaceAll("{viewer}", site.viewer).replaceAll("{pages}", site.pages)
+    .replaceAll("{room}", id ?? PLACEHOLDER);
+
+  function render() {
+    const site = SITES[deployment()];
+    const id = room();
+    roomInput.setAttribute("aria-invalid", String(roomInput.value.trim() !== "" && !id));
+    history.replaceState(null, "", `#${deployment()}${id ? `/${id}` : ""}`);
+
+    for (const element of document.querySelectorAll("[data-url]")) {
+      const template = element.dataset.url;
+      const needsRoom = template.includes("{room}");
+      const url = fill(template, site, id);
+      element.textContent = url.replace(/^[a-z]+:\/\//, "");
+      if (element.tagName !== "A") continue;
+      element.classList.toggle("off", needsRoom && !id);
+      if (needsRoom && !id) element.removeAttribute("href");
+      else element.href = url;
+    }
+    for (const row of document.querySelectorAll(".local-only")) row.hidden = deployment() !== "local";
+    for (const row of document.querySelectorAll(".deployed-only")) row.hidden = deployment() === "local";
+    for (const pre of document.querySelectorAll("[data-cmd]")) pre.textContent = COMMANDS[pre.dataset.cmd](site, id ?? PLACEHOLDER);
+  }
+
+  function say(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle("error", isError);
+  }
+
+  document.getElementById("new-room").addEventListener("click", async () => {
+    say("Opening…");
+    try {
+      const id = await OPEN_ROOM(SITES[deployment()]);
+      if (!id) throw new Error("no Room id in the reply");
+      roomInput.value = id;
+      render();
+      say("Opened. It expires after a day without use.");
+    } catch (error) {
+      say(deployment() === "local" ? LOCAL_HINT : `Could not open a Room: ${error.message}`, true);
+    }
+  });
+
+  for (const button of document.querySelectorAll(".cmd button")) {
+    button.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(button.previousElementSibling.textContent);
+      button.textContent = "Copied";
+      setTimeout(() => (button.textContent = "Copy"), 1500);
+    });
+  }
+  for (const input of document.querySelectorAll('input[name="deployment"]')) input.addEventListener("change", () => { say(""); render(); });
+  roomInput.addEventListener("input", () => { say(""); render(); });
+  render();
+</script>
+</body>
+</html>
